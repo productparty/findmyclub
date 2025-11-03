@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Disable npm dependency updates for the root package.json
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+
+  # Disable npm dependency updates for the golf-club-ui subdirectory
+  - package-ecosystem: "npm"
+    directory: "/golf-club-ui"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+
+  # Disable pip dependency updates for Python packages
+  - package-ecosystem: "pip"
+    directory: "/server"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
