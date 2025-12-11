@@ -14,7 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { InteractiveMap } from '../../components/InteractiveMap';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { divIcon } from 'leaflet';
-import { Marker } from 'react-leaflet';
+import { Marker, Popup } from 'react-leaflet';
 
 interface Filters {
   zipCode: string;
@@ -125,6 +125,111 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     navigate(`?${searchParams.toString()}`, { replace: true });
   };
 
+  const inspectClubData = (clubs: Club[]) => {
+    console.log('Inspecting club data:');
+    console.log('First club raw data:', clubs.length > 0 ? clubs[0] : 'No clubs');
+    
+    const hasCoordinates = clubs.some(club => 
+      club.hasOwnProperty('latitude') && club.hasOwnProperty('longitude')
+    );
+    console.log('Clubs have coordinate properties:', hasCoordinates);
+    
+    const validCoordinates = clubs.filter(club => 
+      club.latitude && club.longitude && 
+      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+    );
+    console.log('Clubs with valid coordinates:', validCoordinates.length);
+    
+    if (validCoordinates.length > 0) {
+      console.log('Example valid club:', validCoordinates[0]);
+    }
+    
+    return clubs;
+  };
+
+  const transformClubData = async (data: any[]): Promise<Club[]> => {
+    console.log('Production debug - raw API data:', data.slice(0, 3));
+    
+    // Process clubs in batches to avoid overwhelming the Zippopotam.us API
+    const batchSize = 5;
+    const batches = [];
+    
+    for (let i = 0; i < data.length; i += batchSize) {
+      batches.push(data.slice(i, i + batchSize));
+    }
+    
+    let transformedClubs: Club[] = [];
+    
+    for (const batch of batches) {
+      const batchResults = await Promise.all(batch.map(async (club) => {
+        // Log the raw club data to see what we're working with
+        console.log('Production debug - processing club:', club.id || club.club_name, club);
+        
+        let latitude = null;
+        let longitude = null;
+        
+        // Try all possible coordinate formats
+        if (club.latitude !== undefined && club.longitude !== undefined) {
+          latitude = club.latitude;
+          longitude = club.longitude;
+        } else if (club.lat !== undefined && club.lng !== undefined) {
+          latitude = club.lat;
+          longitude = club.lng;
+        } else if (club.coordinates && Array.isArray(club.coordinates) && club.coordinates.length === 2) {
+          longitude = club.coordinates[0];
+          latitude = club.coordinates[1];
+        }
+        
+        // If no coordinates found, try to get them from zip code
+        if ((latitude === null || longitude === null || 
+             isNaN(Number(latitude)) || isNaN(Number(longitude))) && 
+            club.zip_code) {
+          try {
+            console.log(`Production debug - fetching coordinates for zip code ${club.zip_code}`);
+            const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
+            
+            if (!zipResponse.ok) {
+              throw new Error(`Failed to fetch coordinates for zip code ${club.zip_code}`);
+            }
+            
+            const zipData = await zipResponse.json();
+            
+            if (zipData.places && zipData.places.length > 0) {
+              latitude = Number(zipData.places[0].latitude);
+              longitude = Number(zipData.places[0].longitude);
+              console.log(`Production debug - found coordinates for ${club.zip_code}:`, { latitude, longitude });
+            }
+          } catch (error) {
+            console.error(`Production debug - failed to get coordinates for zip code ${club.zip_code}:`, error);
+          }
+        }
+        
+        // Ensure coordinates are valid numbers
+        latitude = typeof latitude === 'string' ? parseFloat(latitude) : latitude;
+        longitude = typeof longitude === 'string' ? parseFloat(longitude) : longitude;
+        
+        // Log the final coordinates
+        console.log(`Production debug - final coordinates for club ${club.id || club.club_name}:`, { latitude, longitude });
+        
+        return {
+          ...club,
+          latitude: latitude,
+          longitude: longitude
+        };
+      }));
+      
+      transformedClubs = [...transformedClubs, ...batchResults];
+      
+      // Add a small delay between batches to avoid rate limiting
+      if (batches.length > 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    return transformedClubs;
+  };
+
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
@@ -137,13 +242,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     setError('');
 
     try {
-      // Log the request for debugging
       console.log('Searching with filters:', filters);
       
       const queryParams = new URLSearchParams({
         zip_code: filters.zipCode,
         radius: filters.radius,
-        limit: '100', // Increase limit to ensure we get results
+        limit: '100',
       });
 
       if (filters.preferred_price_range) {
@@ -171,7 +275,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
         }
       });
 
-      // Log the full URL for debugging
       const apiUrl = `${config.API_URL}/api/find_clubs/?${queryParams}`;
       console.log('API URL:', apiUrl);
 
@@ -184,7 +287,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
         }
       });
 
-      // Log the response status
       console.log('Response status:', response.status);
 
       if (!response.ok) {
@@ -203,57 +305,26 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       console.log('Search results:', data);
       
       if (data.results && Array.isArray(data.results)) {
-        // Transform the results to match the expected Club format
-        const transformedClubs = data.results.map((club: any) => ({
-          id: club.id || club.global_id || club.golfclub_id,
-          global_id: club.id || club.global_id || club.golfclub_id,
-          club_name: club.club_name || club.name,
-          address: club.address,
-          city: club.city,
-          state: club.state,
-          zip_code: club.zip_code,
-          latitude: typeof club.latitude === 'string' ? parseFloat(club.latitude) : club.latitude || 0,
-          longitude: typeof club.longitude === 'string' ? parseFloat(club.longitude) : club.longitude || 0,
-          price_tier: club.price_tier || '$',
-          difficulty: club.difficulty || 'Medium',
-          number_of_holes: club.number_of_holes || '18',
-          distance_miles: club.distance_miles,
-          club_membership: club.club_membership || 'Public',
-          driving_range: Boolean(club.driving_range),
-          putting_green: Boolean(club.putting_green),
-          chipping_green: Boolean(club.chipping_green),
-          practice_bunker: Boolean(club.practice_bunker),
-          restaurant: Boolean(club.restaurant),
-          lodging_on_site: Boolean(club.lodging_on_site),
-          motor_cart: Boolean(club.motor_cart),
-          pull_cart: Boolean(club.pull_cart),
-          golf_clubs_rental: Boolean(club.golf_clubs_rental),
-          club_fitting: Boolean(club.club_fitting),
-          golf_lessons: Boolean(club.golf_lessons),
-        }));
+        const transformedClubs = await transformClubData(data.results);
+        console.log('Transformed clubs:', transformedClubs);
+        
+        inspectClubData(transformedClubs);
         
         setClubs(transformedClubs);
         setTotalPages(Math.ceil(transformedClubs.length / ITEMS_PER_PAGE));
         setCurrentPage(1);
         
         if (transformedClubs.length > 0) {
-          // Find the first club with valid coordinates
-          const clubWithCoords = transformedClubs.find((club: Club) => 
+          const clubWithCoords = transformedClubs.find(club => 
             club.latitude && club.longitude && 
             !isNaN(club.latitude) && !isNaN(club.longitude) &&
             Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
           );
-          
           if (clubWithCoords) {
-            setMapCenter([clubWithCoords.latitude, clubWithCoords.longitude]);
-            console.log('Setting map center to:', clubWithCoords.latitude, clubWithCoords.longitude);
-          } else {
-            // Default to a US center if no valid coordinates
-            setMapCenter([39.8283, -98.5795]);
+            setMapCenter([clubWithCoords.latitude!, clubWithCoords.longitude!]);
+            console.log('Setting map center to:', [clubWithCoords.latitude, clubWithCoords.longitude]);
           }
         }
-        
-        // Update URL with search parameters
         const urlParams: Record<string, string> = {
           zipCode: filters.zipCode,
           radius: filters.radius
@@ -265,7 +336,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
         
         updateURL(urlParams);
       } else if (data.clubs && Array.isArray(data.clubs)) {
-        // Original handling for clubs array
         setClubs(data.clubs);
         setTotalPages(Math.ceil(data.clubs.length / ITEMS_PER_PAGE));
         setCurrentPage(1);
@@ -274,7 +344,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
           setMapCenter([data.center.lat, data.center.lng]);
         }
         
-        // Update URL with search parameters
         const urlParams: Record<string, string> = {
           zipCode: filters.zipCode,
           radius: filters.radius
@@ -387,14 +456,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     const isFavorite = favorites.includes(clubId);
     
     if (isFavorite) {
-      // Remove from favorites
       await supabase
         .from('favorites')
         .delete()
         .eq('profile_id', session.user.id)
         .eq('golfclub_id', clubId);
     } else {
-      // Add to favorites
       await supabase
         .from('favorites')
         .insert([
@@ -405,16 +472,14 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
         ]);
     }
     
-    // Refresh favorites list
     fetchFavorites();
   };
 
   const handleMarkerClick = (clubId: string) => {
     console.log('Navigating to club detail with ID:', clubId);
-    // Use global_id for navigation if available
     const club = clubs.find(c => c.id === clubId || c.global_id === clubId);
     if (club) {
-      navigate(`/club-detail/${club.global_id || club.id}`);
+      navigate(`/clubs/${club.global_id || club.id}`);
     } else {
       console.error('Club not found with ID:', clubId);
     }
@@ -445,7 +510,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       setSortBy(savedSortBy);
       setFilteredClubs(savedClubs);
     } else {
-      // If no saved state, initialize from URL params
       const searchParams = new URLSearchParams(location.search);
       const initialFilters = {
         zipCode: searchParams.get('zipCode') || '',
@@ -502,22 +566,80 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       console.log('Current clubs data:', clubs);
       console.log('Paginated clubs:', getPaginatedClubs);
       
-      // Check if clubs have valid coordinates
       const validCoords = clubs.filter(club => 
         club.latitude && club.longitude && 
-        !isNaN(club.latitude) && !isNaN(club.longitude) &&
-        Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
+        !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+        Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
       );
       
       console.log('Clubs with valid coordinates:', validCoords.length);
       
       if (validCoords.length > 0) {
-        console.log('First valid club coordinates:', validCoords[0].latitude, validCoords[0].longitude);
+        setMapCenter([Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
+        console.log('Setting map center to first valid club:', [Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
+      } else if (filters.zipCode) {
+        console.log('No valid coordinates found, using zip code center if available');
       }
     }
   }, [clubs, getPaginatedClubs]);
 
-  // Add this custom marker style
+  useEffect(() => {
+    if (mapCenter && mapCenter.length === 2) {
+      console.log('Map center is set to:', mapCenter);
+      
+      if (typeof mapCenter[0] !== 'number' || typeof mapCenter[1] !== 'number') {
+        setMapCenter([Number(mapCenter[0]), Number(mapCenter[1])]);
+      }
+    }
+    
+    if (clubs.length > 0) {
+      const anyValidClub = clubs.find(club => 
+        club.latitude && club.longitude && 
+        !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+        Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+      );
+      
+      if (anyValidClub) {
+        console.log('Setting map center to valid club:', [Number(anyValidClub.latitude), Number(anyValidClub.longitude)]);
+        setMapCenter([Number(anyValidClub.latitude), Number(anyValidClub.longitude)]);
+      } else {
+        console.log('No valid clubs found, setting default map center');
+        setMapCenter([42.3314, -83.0458]);
+      }
+    }
+  }, [clubs]);
+
+  useEffect(() => {
+    console.log('Map debug - clubs count:', clubs.length);
+    console.log('Map debug - paginated clubs:', getPaginatedClubs.length);
+    
+    const validClubs = clubs.filter(club => 
+      club.latitude && club.longitude && 
+      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+    );
+    
+    console.log('Map debug - valid clubs with coordinates:', validClubs.length);
+    console.log('Map debug - first few clubs:', validClubs.slice(0, 3));
+    
+    console.log('Map debug - current map center:', mapCenter);
+  }, [clubs, getPaginatedClubs, mapCenter]);
+
+  useEffect(() => {
+    console.log('Production debug - clubs count:', clubs.length);
+    console.log('Production debug - first few clubs:', clubs.slice(0, 3));
+    
+    // Check if coordinates are being properly processed
+    const validClubs = clubs.filter(club => 
+      club.latitude && club.longitude && 
+      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+    );
+    
+    console.log('Production debug - valid clubs with coordinates:', validClubs.length);
+    console.log('Production debug - map center:', mapCenter);
+  }, [clubs, mapCenter]);
+
   const createCustomMarker = (number: number) => {
     return divIcon({
       className: 'custom-marker',
@@ -564,13 +686,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
               <Paper sx={{ 
                 p: { xs: 2, sm: 3 }, 
                 mb: { xs: 2, md: 0 },
-                display: 'block' // Ensure it's always displayed
+                display: 'block'
               }}>
                 <Typography variant="h6" gutterBottom>
                   Find Club Search and Filter
                 </Typography>
                 
-                {/* Make sure form fields are properly sized for mobile */}
                 <Box component="form" onSubmit={handleSearch} sx={{ mt: 2 }}>
                   <TextField
                     label="Zip Code"
@@ -809,7 +930,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
               </Paper>
             </Grid>
             
-            {/* Results section */}
             <Grid item xs={12} md={9}>
               <Box sx={{ 
                 display: 'flex', 
@@ -860,18 +980,38 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                   {filters.zipCode && filters.radius && (
                     <Box sx={{ mb: 4, mt: 2, height: '400px' }}>
                       <InteractiveMap
-                        clubs={getPaginatedClubs.filter(club => 
-                          club.latitude && club.longitude && 
-                          !isNaN(club.latitude) && !isNaN(club.longitude) &&
-                          Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
-                        )}
+                        clubs={[]}
                         center={mapCenter}
                         radius={Number(filters.radius)}
                         onMarkerClick={handleMarkerClick}
                         showNumbers={true}
                         initialZoom={8}
-                        key={`map-${filters.zipCode}-${filters.radius}-${currentPage}`}
-                      />
+                        key={`map-${filters.zipCode}-${filters.radius}-${currentPage}-${JSON.stringify(mapCenter)}-${clubs.length}`}
+                      >
+                        {getPaginatedClubs
+                          .filter(club => 
+                            club.latitude && club.longitude && 
+                            !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+                            Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+                          )
+                          .map((club, index) => {
+                            console.log('Production debug - rendering marker for club:', club.id, club.latitude, club.longitude);
+                            return (
+                              <Marker
+                                key={club.id}
+                                position={[Number(club.latitude), Number(club.longitude)]}
+                                icon={createCustomMarker(index + 1)}
+                                eventHandlers={{
+                                  click: () => handleMarkerClick(club.id)
+                                }}
+                              >
+                                <Popup>
+                                  {club.club_name || 'Golf Club'}
+                                </Popup>
+                              </Marker>
+                            );
+                          })}
+                      </InteractiveMap>
                     </Box>
                   )}
                   <Grid container spacing={{ xs: 1, md: 2 }}>
@@ -896,7 +1036,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                             }}
                             onClick={() => {
                               console.log('Navigating to club detail with ID:', club.id);
-                              navigate(`/club-detail/${club.global_id || club.id}`);
+                              navigate(`/clubs/${club.global_id || club.id}`);
                             }}
                           />
                         </Box>

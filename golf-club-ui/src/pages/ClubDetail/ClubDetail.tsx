@@ -7,6 +7,8 @@ import { InteractiveMap } from '../../components/InteractiveMap';
 import { config } from '../../config';
 import { useAuth } from '../../context/AuthContext';
 import type { Club } from '../../types/Club';
+import { Marker, Popup } from 'react-leaflet';
+import { divIcon } from 'leaflet';
 
 export const ClubDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -15,21 +17,23 @@ export const ClubDetail: React.FC = () => {
     const [club, setClub] = useState<Club | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
 
     useEffect(() => {
         const fetchClubDetails = async () => {
-            if (!id || !session?.access_token) return;
+            if (!id) return;
             
             try {
                 setLoading(true);
                 setError(null);
 
+                // First try the API endpoint
                 const response = await fetch(
                     `${config.API_URL}/api/clubs/${id}`,
                     {
-                        headers: {
+                        headers: session?.access_token ? {
                             'Authorization': `Bearer ${session.access_token}`
-                        }
+                        } : {}
                     }
                 );
 
@@ -38,7 +42,41 @@ export const ClubDetail: React.FC = () => {
                 }
 
                 const data = await response.json();
+                console.log('Club data from API:', data);
+                
+                // If we don't have coordinates, try to get them from zip code
+                if ((!data.latitude || !data.longitude) && data.zip_code) {
+                    try {
+                        console.log(`Fetching coordinates for club with zip code ${data.zip_code}`);
+                        const zipResponse = await fetch(`https://api.zippopotam.us/us/${data.zip_code}`);
+                        const zipData = await zipResponse.json();
+                        
+                        if (zipData.places && zipData.places.length > 0) {
+                            data.latitude = Number(zipData.places[0].latitude);
+                            data.longitude = Number(zipData.places[0].longitude);
+                            console.log(`Found coordinates for ${data.zip_code}:`, { 
+                                latitude: data.latitude, 
+                                longitude: data.longitude 
+                            });
+                        }
+                    } catch (error) {
+                        console.error(`Failed to get coordinates for zip code ${data.zip_code}:`, error);
+                    }
+                }
+                
                 setClub(data);
+                
+                // Set map center immediately if we have valid coordinates
+                if (data.latitude && data.longitude) {
+                    const lat = Number(data.latitude);
+                    const lng = Number(data.longitude);
+                    
+                    if (!isNaN(lat) && !isNaN(lng) && 
+                        Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+                        console.log('Setting map center to club coordinates:', [lat, lng]);
+                        setMapCenter([lat, lng]);
+                    }
+                }
             } catch (err) {
                 console.error('Error fetching club details:', err);
                 setError(err instanceof Error ? err.message : 'An error occurred');
@@ -93,17 +131,31 @@ export const ClubDetail: React.FC = () => {
                 <Typography variant="h4" gutterBottom>{club.club_name}</Typography>
 
                 <Box sx={{ mb: 4, height: '400px' }}>
-                    <InteractiveMap 
-                        clubs={[club]}
-                        center={[
-                            club.longitude || -98.5795, // Default to US center if no coords
-                            club.latitude || 39.8283
-                        ]}
+                    <InteractiveMap
+                        clubs={[club].filter(c => 
+                            c && c.latitude && c.longitude && 
+                            !isNaN(Number(c.latitude)) && !isNaN(Number(c.longitude))
+                        )}
+                        center={mapCenter}
                         radius={0}
-                        onMarkerClick={(clubId) => {
-                            console.log(`Marker clicked for club ID: ${clubId}`);
-                        }}
-                    />
+                        onMarkerClick={() => {}}
+                        initialZoom={15}
+                        key={`club-detail-map-${club?.id}-${mapCenter[0]}-${mapCenter[1]}`}
+                    >
+                        {club && club.latitude && club.longitude && (
+                            <Marker
+                                position={[Number(club.latitude), Number(club.longitude)]}
+                                icon={divIcon({
+                                    className: 'custom-div-icon',
+                                    html: `<div class='marker-pin'>1</div>`,
+                                    iconSize: [30, 42],
+                                    iconAnchor: [15, 42]
+                                })}
+                            >
+                                <Popup>{club.club_name}</Popup>
+                            </Marker>
+                        )}
+                    </InteractiveMap>
                 </Box>
 
                 <Paper sx={{ p: 3, mb: 3 }}>

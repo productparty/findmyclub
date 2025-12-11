@@ -30,6 +30,7 @@ import LandingPage from './pages/Home/LandingPage';
 import PasswordResetRequest from './pages/PasswordReset/PasswordResetRequest';
 import PasswordResetConfirm from './pages/PasswordReset/PasswordResetConfirm';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import CreateAccountSuccessful from './pages/CreateAccount/CreateAccountSuccessful';
 
 // Log environment info in development or when debugging
 if (import.meta.env.DEV || import.meta.env.VITE_DEBUG === 'true') {
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
       { index: true, element: <LandingPage /> },
       { path: "dashboard", element: <ProtectedRoute><Dashboard /></ProtectedRoute> },
       { path: "find-club", element: <FindClubUpdated /> },
+      { path: "recommend-club", element: <RecommendClubUpdated /> },
       { path: "favorites", element: <ProtectedRoute><Favorites /></ProtectedRoute> },
       { path: "profile", element: <ProtectedRoute><GolferProfileUpdated /></ProtectedRoute> },
       { path: "login", element: <Login /> },
@@ -78,6 +80,7 @@ const router = createBrowserRouter([
       { path: "password-reset-confirm", element: <PasswordResetConfirm /> },
       { path: "clubs/:id", element: <ClubDetail /> },
       { path: "club-detail/:id", element: <ClubDetail /> },
+      { path: "create-account-successful", element: <CreateAccountSuccessful /> },
       { path: "*", element: <NotFound /> }
     ]
   }

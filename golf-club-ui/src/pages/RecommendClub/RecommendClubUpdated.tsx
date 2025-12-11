@@ -44,9 +44,10 @@ const RecommendClubUpdated: React.FC = () => {
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const ITEMS_PER_PAGE = 10;
   const [favorites, setFavorites] = useState<string[]>([]);
   const [mapCenter, setMapCenter] = useState<[number, number]>([39.8283, -98.5795]);
+  const [mapZoom, setMapZoom] = useState(4);
 
   const handleSearch = async () => {
     if (!zipCode) {
@@ -146,7 +147,7 @@ const RecommendClubUpdated: React.FC = () => {
       return;
     }
     
-    setFavorites(data.map(fav => fav.golfclub_id));
+    setFavorites(data.map((fav: { golfclub_id: string }) => fav.golfclub_id));
   };
 
   const handleToggleFavorite = async (clubId: string) => {
@@ -215,6 +216,64 @@ const RecommendClubUpdated: React.FC = () => {
       ">${number}</div>`,
     });
   };
+
+  const calculateMapBounds = (clubs: any[]) => {
+    const validClubs = clubs.filter(club => 
+      club.latitude && club.longitude && 
+      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+    );
+    
+    if (validClubs.length === 0) return { center: [39.8283, -98.5795], zoom: 4 };
+    
+    if (validClubs.length === 1) {
+      return { 
+        center: [Number(validClubs[0].latitude), Number(validClubs[0].longitude)], 
+        zoom: 10 
+      };
+    }
+    
+    // Calculate bounds
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    
+    validClubs.forEach(club => {
+      const lat = Number(club.latitude);
+      const lng = Number(club.longitude);
+      
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng);
+      maxLng = Math.max(maxLng, lng);
+    });
+    
+    // Calculate center
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+    
+    // Calculate appropriate zoom level
+    const latDiff = maxLat - minLat;
+    const lngDiff = maxLng - minLng;
+    const maxDiff = Math.max(latDiff, lngDiff);
+    
+    let zoom = 10;
+    if (maxDiff > 10) zoom = 3;
+    else if (maxDiff > 5) zoom = 4;
+    else if (maxDiff > 3) zoom = 5;
+    else if (maxDiff > 1) zoom = 6;
+    else if (maxDiff > 0.5) zoom = 7;
+    else if (maxDiff > 0.1) zoom = 8;
+    else if (maxDiff > 0.05) zoom = 9;
+    
+    return { center: [centerLat, centerLng], zoom };
+  };
+
+  useEffect(() => {
+    if (courses.length > 0) {
+      const { center, zoom } = calculateMapBounds(getCurrentPageCourses());
+      setMapCenter(center as [number, number]);
+      setMapZoom(zoom);
+    }
+  }, [courses, currentPage]);
 
   return (
     <Box
@@ -318,18 +377,15 @@ const RecommendClubUpdated: React.FC = () => {
                 borderRadius: 1
               }}>
                 <InteractiveMap
-                  clubs={courses.filter(c =>
-                    c.latitude && c.longitude &&
-                    isValidCoordinate(c.latitude, c.longitude)
-                  )}
+                  clubs={[]}
                   center={[mapCenter[0], mapCenter[1]]}
                   radius={parseInt(radius)}
                   onMarkerClick={handleClubClick}
                   showNumbers={true}
-                  initialZoom={4}
-                  key={`map-${currentPage}`}
+                  initialZoom={mapZoom}
+                  key={`map-${currentPage}-${mapZoom}`}
                 >
-                  {courses.filter(c =>
+                  {getCurrentPageCourses().filter(c =>
                     c.latitude && c.longitude &&
                     isValidCoordinate(c.latitude, c.longitude)
                   ).map((club, index) => (

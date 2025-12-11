@@ -68,7 +68,49 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             ...item.golfclub
           }));
           
-          setFavoriteClubs(clubs);
+          // Fetch coordinates for clubs that don't have them
+          const clubsWithCoordinates = await Promise.all(
+            clubs.map(async (club: any) => {
+              // Skip if club already has valid coordinates
+              if (
+                club.latitude && 
+                club.longitude && 
+                !isNaN(Number(club.latitude)) && 
+                !isNaN(Number(club.longitude)) &&
+                Math.abs(Number(club.latitude)) <= 90 && 
+                Math.abs(Number(club.longitude)) <= 180
+              ) {
+                return club;
+              }
+              
+              // Try to get coordinates from zip code
+              if (club.zip_code) {
+                try {
+                  console.log(`FavoritesContext - Fetching coordinates for club ${club.id || club.club_name} with zip code ${club.zip_code}`);
+                  const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
+                  const zipData = await zipResponse.json();
+                  
+                  if (zipData.places && zipData.places.length > 0) {
+                    const latitude = Number(zipData.places[0].latitude);
+                    const longitude = Number(zipData.places[0].longitude);
+                    console.log(`FavoritesContext - Found coordinates for ${club.zip_code}:`, { latitude, longitude });
+                    
+                    return {
+                      ...club,
+                      latitude,
+                      longitude
+                    };
+                  }
+                } catch (error) {
+                  console.error(`FavoritesContext - Failed to get coordinates for zip code ${club.zip_code}:`, error);
+                }
+              }
+              
+              return club;
+            })
+          );
+          
+          setFavoriteClubs(clubsWithCoordinates);
         } catch (err) {
           console.error('Error fetching favorite clubs:', err);
           setError(err instanceof Error ? err.message : 'Failed to fetch favorite clubs');
@@ -153,5 +195,4 @@ export const useFavorites = () => {
     throw new Error('useFavorites must be used within a FavoritesProvider');
   }
   return context;
-}; 
-
+};

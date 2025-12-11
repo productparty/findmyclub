@@ -63,7 +63,7 @@ export const ClubDetailPage = () => {
             return;
         }
         
-        setFavorites(data.map(fav => fav.golfclub_id));
+        setFavorites(data.map((fav: { golfclub_id: string }) => fav.golfclub_id));
     };
 
     const handleToggleFavorite = async (clubId: string) => {
@@ -106,7 +106,7 @@ export const ClubDetailPage = () => {
     }, [session?.user?.id]);
 
     const { mapContainer, setMapContainer } = useMap({
-        center: club ? [club.lng || 0, club.lat || 0] : [0, 0],
+        center: club ? [club.lat || 0, club.lng || 0] : [0, 0],
         radius: 0  // Set to 0 since we want to focus on a single club
     });
 
@@ -150,7 +150,27 @@ export const ClubDetailPage = () => {
                 if (!data) throw new Error('Club not found');
                 
                 if (!data.latitude || !data.longitude) {
-                    throw new Error('Club coordinates not available');
+                    // Try to fetch coordinates from zip code
+                    if (data.zip_code) {
+                        try {
+                            console.log(`ClubDetailPage - Fetching coordinates for club ${data.global_id} with zip code ${data.zip_code}`);
+                            const zipResponse = await fetch(`https://api.zippopotam.us/us/${data.zip_code}`);
+                            const zipData = await zipResponse.json();
+                            
+                            if (zipData.places && zipData.places.length > 0) {
+                                data.latitude = Number(zipData.places[0].latitude);
+                                data.longitude = Number(zipData.places[0].longitude);
+                                console.log(`ClubDetailPage - Found coordinates for ${data.zip_code}:`, { latitude: data.latitude, longitude: data.longitude });
+                            } else {
+                                throw new Error('Club coordinates not available');
+                            }
+                        } catch (error) {
+                            console.error(`ClubDetailPage - Failed to get coordinates for zip code ${data.zip_code}:`, error);
+                            throw new Error('Club coordinates not available');
+                        }
+                    } else {
+                        throw new Error('Club coordinates not available');
+                    }
                 }
                 
                 setClub({
@@ -218,7 +238,7 @@ export const ClubDetailPage = () => {
             <Box sx={{ height: '400px', mb: 3, borderRadius: 1 }}>
                 <InteractiveMap
                     clubs={[club]}
-                    center={[club.lng || 0, club.lat || 0]}
+                    center={[club.lat || 0, club.lng || 0]}
                     radius={0}
                     initialZoom={15}  // Increased zoom level for better detail
                     onMarkerClick={() => {}}

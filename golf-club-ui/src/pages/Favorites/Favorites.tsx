@@ -9,6 +9,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import type { FavoriteRecord, FavoriteClub, GolfClubResponse } from '../../types/golf-club';
 import { useFavorites } from '../../context/FavoritesContext';
+import { Marker } from 'react-leaflet';
+import { divIcon } from 'leaflet';
 
 interface GolfClubData {
   id: string;
@@ -44,12 +46,60 @@ const isValidGolfClub = (club: unknown): club is GolfClubResponse => {
   );
 };
 
+const calculateMapBounds = (clubs: any[]) => {
+  const validClubs = clubs.filter(club => 
+    club.latitude && club.longitude && 
+    !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+    Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+  );
+  
+  if (validClubs.length === 0) return { center: [39.8283, -98.5795], zoom: 4 };
+  
+  if (validClubs.length === 1) {
+    return { 
+      center: [Number(validClubs[0].latitude), Number(validClubs[0].longitude)], 
+      zoom: 10 
+    };
+  }
+  
+  let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+  
+  validClubs.forEach(club => {
+    const lat = Number(club.latitude);
+    const lng = Number(club.longitude);
+    
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+  });
+  
+  const centerLat = (minLat + maxLat) / 2;
+  const centerLng = (minLng + maxLng) / 2;
+  
+  const latDiff = maxLat - minLat;
+  const lngDiff = maxLng - minLng;
+  const maxDiff = Math.max(latDiff, lngDiff);
+  
+  let zoom = 10;
+  if (maxDiff > 10) zoom = 3;
+  else if (maxDiff > 5) zoom = 4;
+  else if (maxDiff > 3) zoom = 5;
+  else if (maxDiff > 1) zoom = 6;
+  else if (maxDiff > 0.5) zoom = 7;
+  else if (maxDiff > 0.1) zoom = 8;
+  else if (maxDiff > 0.05) zoom = 9;
+  
+  return { center: [centerLat, centerLng], zoom };
+};
+
 const Favorites: React.FC = () => {
   const { favoriteClubs, isLoading, error, toggleFavorite } = useFavorites();
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const ITEMS_PER_PAGE = 10;
-  const [mapCenter] = useState<[number, number]>([-98.5795, 39.8283]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-98.5795, 39.8283]);
+  const [mapZoom, setMapZoom] = useState(5);
   const navigate = useNavigate();
   const mapRef = React.useRef<mapboxgl.Map | null>(null);
 
@@ -72,15 +122,20 @@ const Favorites: React.FC = () => {
 
   useEffect(() => {
     if (favoriteClubs.length > 0) {
-      const newBounds = new mapboxgl.LngLatBounds();
-      favoriteClubs.forEach((club) => {
-        if (club.longitude && club.latitude) {
-          newBounds.extend([club.longitude, club.latitude]);
-        }
-      });
-      mapRef.current?.fitBounds(newBounds, { padding: 50 });
+      const { center, zoom } = calculateMapBounds(getCurrentPageFavorites());
+      setMapCenter(center as [number, number]);
+      setMapZoom(zoom);
     }
-  }, [favoriteClubs]);
+  }, [favoriteClubs, currentPage]);
+
+  const handleClubClick = (clubId: string) => {
+    console.log('Navigating to club with ID:', clubId);
+    if (!clubId) {
+      console.error('Invalid club ID:', clubId);
+      return;
+    }
+    navigate(`/clubs/${clubId}`);
+  };
 
   return (
     <PageLayout title="Favorite Clubs">
@@ -97,18 +152,51 @@ const Favorites: React.FC = () => {
           </Box>
         ) : favoriteClubs.length > 0 ? (
           <>
-            <Box sx={{ mb: 4 }}>
+            <Box sx={{ height: '400px', mb: 3, borderRadius: 1 }}>
               <InteractiveMap
-                clubs={favoriteClubs.filter((c) => c.latitude && c.longitude && isValidCoordinate(c.latitude, c.longitude)).map(club => ({
-                  ...club,
-                  id: club.golfclub_id
-                }))}
+                clubs={[]}
                 center={mapCenter}
-                radius={25}
-                onMarkerClick={(clubId) => navigate(`/clubs/${clubId}`)}
-                showNumbers={false}
-                key="favorites-map"
-              />
+                radius={0}
+                onMarkerClick={handleClubClick}
+                showNumbers={true}
+                initialZoom={mapZoom}
+                key={`favorites-map-${JSON.stringify(mapCenter)}-${currentPage}-${mapZoom}`}
+              >
+                {getCurrentPageFavorites()
+                  .filter(club => 
+                    club.latitude && club.longitude && 
+                    !isNaN(club.latitude) && !isNaN(club.longitude) &&
+                    Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
+                  )
+                  .map((club, index) => {
+                    console.log('Favorites - Club Coordinates:', club.latitude, club.longitude);
+                    return (
+                      <Marker
+                        key={club.golfclub_id || club.id}
+                        position={[Number(club.latitude), Number(club.longitude)]}
+                        icon={divIcon({
+                          className: 'custom-marker',
+                          html: `<div style="
+                            background-color: #1976d2;
+                            color: white;
+                            border-radius: 50%;
+                            width: 24px;
+                            height: 24px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-weight: bold;
+                            border: 2px solid white;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                          ">${index + 1}</div>`,
+                        })}
+                        eventHandlers={{
+                          click: () => handleClubClick(club.golfclub_id || club.id)
+                        }}
+                      />
+                    );
+                  })}
+              </InteractiveMap>
             </Box>
 
             <Grid container spacing={2}>
@@ -130,7 +218,10 @@ const Favorites: React.FC = () => {
                       showToggle={true}
                       index={(currentPage - 1) * ITEMS_PER_PAGE + index}
                       showScore={false}
-                      onClick={() => navigate(`/clubs/${club.golfclub_id}`)}
+                      onClick={() => {
+                        console.log('Club card clicked:', club);
+                        handleClubClick(club.golfclub_id || club.id);
+                      }}
                       sx={{
                         cursor: 'pointer',
                         '&:hover': {

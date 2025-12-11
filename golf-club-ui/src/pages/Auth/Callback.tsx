@@ -1,57 +1,57 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { Box, Typography, CircularProgress } from '@mui/material';
-import { Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { Box, CircularProgress, Typography } from '@mui/material';
 
 const AuthCallback = () => {
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Process the OAuth callback or email confirmation
-    const { data: authListener } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      console.log("Auth event:", event);
-      
-      if (event === 'SIGNED_IN' && session) {
-        // User has been signed in, redirect to dashboard or home
-        navigate('/dashboard', { replace: true });
-      } else if (event === 'USER_UPDATED') {
-        // Email has been confirmed
-        navigate('/login', { replace: true });
-      } else {
-        // Default fallback
-        navigate('/login', { replace: true });
-      }
-    });
-
-    // Handle the hash fragment for OAuth providers
-    const handleHashFragment = async () => {
-      const hashFragment = window.location.hash;
-      if (hashFragment && hashFragment.includes('access_token')) {
-        // Process the hash fragment
-        const { data, error } = await supabase.auth.getUser();
-        if (data?.user && !error) {
-          navigate('/dashboard', { replace: true });
+    const handleAuthCallback = async () => {
+      try {
+        // Get the URL hash
+        const hash = window.location.hash;
+        const query = window.location.search;
+        
+        // Check if this is an email confirmation
+        if (query.includes('type=email_confirmation') || query.includes('type=signup')) {
+          console.log('Email confirmation detected');
+          // Redirect to the success page
+          navigate('/create-account-successful');
+          return;
         }
+        
+        // Handle other auth callbacks
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
+        
+        if (data?.session) {
+          navigate('/dashboard');
+        } else {
+          navigate('/login');
+        }
+      } catch (err) {
+        console.error('Auth callback error:', err);
+        setError(err instanceof Error ? err.message : 'Authentication error');
+        navigate('/login');
       }
     };
 
-    handleHashFragment();
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
+    handleAuthCallback();
   }, [navigate]);
 
   return (
-    <Box 
-      display="flex" 
-      justifyContent="center" 
-      alignItems="center" 
-      minHeight="100vh"
-    >
-      <Typography>Processing authentication, please wait...</Typography>
-      <CircularProgress sx={{ ml: 2 }} />
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      {error ? (
+        <Typography color="error">{error}</Typography>
+      ) : (
+        <>
+          <CircularProgress />
+          <Typography sx={{ mt: 2 }}>Processing authentication...</Typography>
+        </>
+      )}
     </Box>
   );
 };

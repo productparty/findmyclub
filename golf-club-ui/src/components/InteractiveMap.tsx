@@ -2,8 +2,10 @@
 import React, { useEffect, useRef, forwardRef, useMemo } from 'react';
 import { Box } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
-import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Circle, Marker, Popup } from 'react-leaflet';
 import { LatLngBounds, LatLng } from 'leaflet';
+import L from 'leaflet';
+import { divIcon } from 'leaflet';
 
 interface Club {
     id: string;
@@ -26,19 +28,23 @@ interface InteractiveMapProps {
     children?: React.ReactNode;
 }
 
-// Create a custom HTML element for each marker
-function createNumberedMarker(number: number) {
-    const el = document.createElement('div');
-    el.className = 'marker';
-    el.innerHTML = `<div class="marker-number">${number}</div>`;
-    return el;
-}
+// Fix Leaflet icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
-// Add validation function
-const isValidCoordinate = (lat: number, lng: number) => 
-  !isNaN(lat) && !isNaN(lng) && 
-  lat >= -90 && lat <= 90 && 
-  lng >= -180 && lng <= 180;
+// Create a consistent marker style function
+export const createNumberedMarker = (index: number) => {
+  return divIcon({
+    className: 'custom-div-icon',
+    html: `<div class='marker-pin'>${index + 1}</div>`,
+    iconSize: [30, 42],
+    iconAnchor: [15, 42]
+  });
+};
 
 export const MapBounds: React.FC<{ clubs: any[] }> = ({ clubs }) => {
     const map = useMap();
@@ -72,16 +78,30 @@ export const MapBounds: React.FC<{ clubs: any[] }> = ({ clubs }) => {
 };
 
 export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
-  clubs,  // This will now be getPaginatedClubs instead of all clubs
+  clubs,
   center,
-  initialZoom = 14,
+  radius,
+  onMarkerClick,
+  showNumbers = true,
+  initialZoom = 8,
   children
 }, ref) => {
+  // Ensure all clubs have valid coordinates and convert to numbers
+  const validClubs = clubs.filter(club => 
+    club.latitude && club.longitude && 
+    !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+    Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+  );
+
+  // Log for debugging
+  console.log('InteractiveMap - center:', center);
+  console.log('InteractiveMap - valid clubs:', validClubs.length);
+  
   return (
     <Box ref={ref} sx={{ height: '100%', width: '100%' }}>
       <Box sx={{ height: '400px', width: '100%', borderRadius: 1, overflow: 'hidden' }}>
         <MapContainer 
-          center={center} 
+          center={[Number(center[0]), Number(center[1])]} 
           zoom={initialZoom} 
           style={{ height: '100%', width: '100%' }}
         >
@@ -89,7 +109,32 @@ export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
-          <MapBounds clubs={clubs} />
+          
+          {radius > 0 && (
+            <Circle
+              center={[Number(center[0]), Number(center[1])]}
+              radius={radius * 1609.34} // Convert miles to meters
+              pathOptions={{ fillColor: 'blue', fillOpacity: 0.1, color: 'blue' }}
+            />
+          )}
+          
+          <MapBounds clubs={validClubs} />
+          
+          {validClubs.map((club, index) => (
+            <Marker
+              key={club.id}
+              position={[Number(club.latitude), Number(club.longitude)]}
+              icon={createNumberedMarker(index)}
+              eventHandlers={{
+                click: () => onMarkerClick && onMarkerClick(club.id)
+              }}
+            >
+              <Popup>
+                {club.club_name || 'Golf Club'}
+              </Popup>
+            </Marker>
+          ))}
+          
           {children}
         </MapContainer>
       </Box>
