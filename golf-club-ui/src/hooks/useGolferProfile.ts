@@ -26,7 +26,6 @@ export const useGolferProfile = () => {
         }
 
         const apiUrl = `${config.API_URL}/api/get-golfer-profile`;
-        console.log('Fetching profile from:', apiUrl);
 
         const response = await fetch(apiUrl, {
           credentials: 'include',

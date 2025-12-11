@@ -7,7 +7,7 @@ import PageLayout from '../../components/PageLayout';
 import { InteractiveMap } from '../../components/InteractiveMap';
 import { useNavigate, useLocation } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
-import type { FavoriteRecord, FavoriteClub, GolfClubResponse } from '../../types/golf-club';
+import type { FavoriteRecord, FavoriteClub } from '../../types/Club';
 import { useFavorites } from '../../context/FavoritesContext';
 import { Marker } from 'react-leaflet';
 import { divIcon } from 'leaflet';
@@ -129,7 +129,6 @@ const Favorites: React.FC = () => {
   }, [favoriteClubs, currentPage]);
 
   const handleClubClick = (clubId: string) => {
-    console.log('Navigating to club with ID:', clubId);
     if (!clubId) {
       console.error('Invalid club ID:', clubId);
       return;
@@ -169,7 +168,6 @@ const Favorites: React.FC = () => {
                     Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
                   )
                   .map((club, index) => {
-                    console.log('Favorites - Club Coordinates:', club.latitude, club.longitude);
                     return (
                       <Marker
                         key={club.golfclub_id || club.id}
@@ -219,7 +217,6 @@ const Favorites: React.FC = () => {
                       index={(currentPage - 1) * ITEMS_PER_PAGE + index}
                       showScore={false}
                       onClick={() => {
-                        console.log('Club card clicked:', club);
                         handleClubClick(club.golfclub_id || club.id);
                       }}
                       sx={{

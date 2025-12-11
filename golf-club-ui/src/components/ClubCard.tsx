@@ -15,6 +15,7 @@ import FavoriteIcon from '@mui/icons-material/Favorite';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import IconButton from '@mui/material/IconButton';
 import './ClubCard.css';
+import type { Club } from '../types/Club';
 
 interface WeatherData {
   date: string;
@@ -22,37 +23,6 @@ interface WeatherData {
   minTemp: number;
   precipitation: number;
   description: string;
-}
-
-export interface Club {
-  global_id: string;
-  id: string;
-  club_name: string;
-  address: string;
-  city: string;
-  state: string;
-  zip_code: string;
-  distance_miles?: number;
-  score?: number;
-  price_tier: string;
-  difficulty: string;
-  number_of_holes: string;
-  club_membership: string;
-  driving_range: boolean;
-  putting_green: boolean;
-  chipping_green: boolean;
-  practice_bunker: boolean;
-  restaurant: boolean;
-  lodging_on_site: boolean;
-  motor_cart: boolean;
-  pull_cart: boolean;
-  golf_clubs_rental: boolean;
-  club_fitting: boolean;
-  golf_lessons: boolean;
-  latitude?: number;
-  longitude?: number;
-  match_percentage: number;
-  weather_icon?: string;
 }
 
 interface ClubCardProps {

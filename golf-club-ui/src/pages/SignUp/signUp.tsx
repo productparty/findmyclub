@@ -37,9 +37,6 @@ const SignUp: React.FC = () => {
     }
 
     try {
-      // Add console log to track signup attempt
-      console.log("Attempting to sign up with email:", formData.email);
-      
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -51,9 +48,6 @@ const SignUp: React.FC = () => {
 
       if (error) throw error;
 
-      // Add console log to confirm successful signup
-      console.log("Sign up successful, redirecting to confirmation page");
-      
       // Redirect to confirmation page - use replace to prevent back navigation
       navigate('/create-account-submitted', { replace: true });
       

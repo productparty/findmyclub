@@ -16,7 +16,6 @@ const AuthCallback = () => {
         
         // Check if this is an email confirmation
         if (query.includes('type=email_confirmation') || query.includes('type=signup')) {
-          console.log('Email confirmation detected');
           // Redirect to the success page
           navigate('/create-account-successful');
           return;

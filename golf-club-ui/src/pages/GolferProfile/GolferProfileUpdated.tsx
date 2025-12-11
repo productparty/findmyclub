@@ -153,8 +153,6 @@ const GolferProfileUpdated: React.FC = () => {
         golf_lessons: !!profile.golf_lessons,
       };
 
-      console.log('Saving profile:', dataToSave);
-
       const { data, error } = await supabase
         .from('profiles')
         .upsert(dataToSave, {

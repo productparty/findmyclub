@@ -14,8 +14,7 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
-    console.log('API URL:', import.meta.env.VITE_API_URL);
+    // Environment variables loaded at build time
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,9 +23,7 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      console.log('Attempting login with Supabase...');
       await signIn(email, password);
-      console.log('Login successful');
       navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);

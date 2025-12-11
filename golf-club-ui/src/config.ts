@@ -26,9 +26,6 @@ export const config = {
   APP_URL: env.APP_URL || defaults.APP_URL
 };
 
-// Only log in development
-if (import.meta.env.DEV) {
-  console.log('Config:', config);
-}
+// Configuration loaded from environment variables
 
 export default config;

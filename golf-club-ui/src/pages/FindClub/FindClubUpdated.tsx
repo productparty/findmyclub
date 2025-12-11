@@ -7,7 +7,8 @@ import {
 } from '@mui/material';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import PageLayout from '../../components/PageLayout';
-import ClubCard, { Club } from '../../components/ClubCard';
+import ClubCard from '../../components/ClubCard';
+import type { Club } from '../../types/Club';
 import { useAuth } from '../../context/AuthContext';
 import { config } from '../../config';
 import { supabase } from '../../lib/supabase';
@@ -126,31 +127,10 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   };
 
   const inspectClubData = (clubs: Club[]) => {
-    console.log('Inspecting club data:');
-    console.log('First club raw data:', clubs.length > 0 ? clubs[0] : 'No clubs');
-    
-    const hasCoordinates = clubs.some(club => 
-      club.hasOwnProperty('latitude') && club.hasOwnProperty('longitude')
-    );
-    console.log('Clubs have coordinate properties:', hasCoordinates);
-    
-    const validCoordinates = clubs.filter(club => 
-      club.latitude && club.longitude && 
-      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-    );
-    console.log('Clubs with valid coordinates:', validCoordinates.length);
-    
-    if (validCoordinates.length > 0) {
-      console.log('Example valid club:', validCoordinates[0]);
-    }
-    
     return clubs;
   };
 
   const transformClubData = async (data: any[]): Promise<Club[]> => {
-    console.log('Production debug - raw API data:', data.slice(0, 3));
-    
     // Process clubs in batches to avoid overwhelming the Zippopotam.us API
     const batchSize = 5;
     const batches = [];
@@ -163,9 +143,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     
     for (const batch of batches) {
       const batchResults = await Promise.all(batch.map(async (club) => {
-        // Log the raw club data to see what we're working with
-        console.log('Production debug - processing club:', club.id || club.club_name, club);
-        
         let latitude = null;
         let longitude = null;
         
@@ -186,7 +163,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
              isNaN(Number(latitude)) || isNaN(Number(longitude))) && 
             club.zip_code) {
           try {
-            console.log(`Production debug - fetching coordinates for zip code ${club.zip_code}`);
             const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
             
             if (!zipResponse.ok) {
@@ -198,19 +174,15 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
             if (zipData.places && zipData.places.length > 0) {
               latitude = Number(zipData.places[0].latitude);
               longitude = Number(zipData.places[0].longitude);
-              console.log(`Production debug - found coordinates for ${club.zip_code}:`, { latitude, longitude });
             }
           } catch (error) {
-            console.error(`Production debug - failed to get coordinates for zip code ${club.zip_code}:`, error);
+            // Silently fail - coordinates will remain null
           }
         }
         
         // Ensure coordinates are valid numbers
         latitude = typeof latitude === 'string' ? parseFloat(latitude) : latitude;
         longitude = typeof longitude === 'string' ? parseFloat(longitude) : longitude;
-        
-        // Log the final coordinates
-        console.log(`Production debug - final coordinates for club ${club.id || club.club_name}:`, { latitude, longitude });
         
         return {
           ...club,
@@ -242,8 +214,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     setError('');
 
     try {
-      console.log('Searching with filters:', filters);
-      
       const queryParams = new URLSearchParams({
         zip_code: filters.zipCode,
         radius: filters.radius,
@@ -276,7 +246,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       });
 
       const apiUrl = `${config.API_URL}/api/find_clubs/?${queryParams}`;
-      console.log('API URL:', apiUrl);
 
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -286,8 +255,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
           'Accept': 'application/json'
         }
       });
-
-      console.log('Response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -302,11 +269,9 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       }
 
       const data = await response.json();
-      console.log('Search results:', data);
       
       if (data.results && Array.isArray(data.results)) {
         const transformedClubs = await transformClubData(data.results);
-        console.log('Transformed clubs:', transformedClubs);
         
         inspectClubData(transformedClubs);
         
@@ -322,7 +287,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
           );
           if (clubWithCoords) {
             setMapCenter([clubWithCoords.latitude!, clubWithCoords.longitude!]);
-            console.log('Setting map center to:', [clubWithCoords.latitude, clubWithCoords.longitude]);
           }
         }
         const urlParams: Record<string, string> = {
@@ -476,12 +440,9 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   };
 
   const handleMarkerClick = (clubId: string) => {
-    console.log('Navigating to club detail with ID:', clubId);
     const club = clubs.find(c => c.id === clubId || c.global_id === clubId);
     if (club) {
       navigate(`/clubs/${club.global_id || club.id}`);
-    } else {
-      console.error('Club not found with ID:', clubId);
     }
   };
 
@@ -563,30 +524,20 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
 
   useEffect(() => {
     if (clubs.length > 0) {
-      console.log('Current clubs data:', clubs);
-      console.log('Paginated clubs:', getPaginatedClubs);
-      
       const validCoords = clubs.filter(club => 
         club.latitude && club.longitude && 
         !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
         Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
       );
       
-      console.log('Clubs with valid coordinates:', validCoords.length);
-      
       if (validCoords.length > 0) {
         setMapCenter([Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
-        console.log('Setting map center to first valid club:', [Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
-      } else if (filters.zipCode) {
-        console.log('No valid coordinates found, using zip code center if available');
       }
     }
   }, [clubs, getPaginatedClubs]);
 
   useEffect(() => {
     if (mapCenter && mapCenter.length === 2) {
-      console.log('Map center is set to:', mapCenter);
-      
       if (typeof mapCenter[0] !== 'number' || typeof mapCenter[1] !== 'number') {
         setMapCenter([Number(mapCenter[0]), Number(mapCenter[1])]);
       }
@@ -600,45 +551,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       );
       
       if (anyValidClub) {
-        console.log('Setting map center to valid club:', [Number(anyValidClub.latitude), Number(anyValidClub.longitude)]);
         setMapCenter([Number(anyValidClub.latitude), Number(anyValidClub.longitude)]);
       } else {
-        console.log('No valid clubs found, setting default map center');
         setMapCenter([42.3314, -83.0458]);
       }
     }
   }, [clubs]);
-
-  useEffect(() => {
-    console.log('Map debug - clubs count:', clubs.length);
-    console.log('Map debug - paginated clubs:', getPaginatedClubs.length);
-    
-    const validClubs = clubs.filter(club => 
-      club.latitude && club.longitude && 
-      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-    );
-    
-    console.log('Map debug - valid clubs with coordinates:', validClubs.length);
-    console.log('Map debug - first few clubs:', validClubs.slice(0, 3));
-    
-    console.log('Map debug - current map center:', mapCenter);
-  }, [clubs, getPaginatedClubs, mapCenter]);
-
-  useEffect(() => {
-    console.log('Production debug - clubs count:', clubs.length);
-    console.log('Production debug - first few clubs:', clubs.slice(0, 3));
-    
-    // Check if coordinates are being properly processed
-    const validClubs = clubs.filter(club => 
-      club.latitude && club.longitude && 
-      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-    );
-    
-    console.log('Production debug - valid clubs with coordinates:', validClubs.length);
-    console.log('Production debug - map center:', mapCenter);
-  }, [clubs, mapCenter]);
 
   const createCustomMarker = (number: number) => {
     return divIcon({
@@ -995,7 +913,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                             Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
                           )
                           .map((club, index) => {
-                            console.log('Production debug - rendering marker for club:', club.id, club.latitude, club.longitude);
                             return (
                               <Marker
                                 key={club.id}
@@ -1035,7 +952,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                               '&:hover': { boxShadow: 3 }
                             }}
                             onClick={() => {
-                              console.log('Navigating to club detail with ID:', club.id);
                               navigate(`/clubs/${club.global_id || club.id}`);
                             }}
                           />

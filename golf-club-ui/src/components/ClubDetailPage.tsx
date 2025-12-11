@@ -9,31 +9,7 @@ import { useMap } from '../hooks/useMap';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { InteractiveMap } from './InteractiveMap';
-
-interface Club {
-    id: string;
-    club_name: string;
-    address: string;
-    city: string;
-    state: string;
-    zip_code: string;
-    distance_miles?: number;
-    price_tier: string;
-    difficulty: string;
-    number_of_holes: string;
-    club_membership: string;
-    driving_range: boolean;
-    putting_green: boolean;
-    chipping_green: boolean;
-    practice_bunker: boolean;
-    restaurant: boolean;
-    lodging_on_site: boolean;
-    motor_cart: boolean;
-    pull_cart: boolean;
-    golf_clubs_rental: boolean;
-    club_fitting: boolean;
-    golf_lessons: boolean;
-    lat?: number;
+import type { Club } from '../types/Club';
     lng?: number;
     match_percentage?: number;
 }
@@ -153,14 +129,12 @@ export const ClubDetailPage = () => {
                     // Try to fetch coordinates from zip code
                     if (data.zip_code) {
                         try {
-                            console.log(`ClubDetailPage - Fetching coordinates for club ${data.global_id} with zip code ${data.zip_code}`);
                             const zipResponse = await fetch(`https://api.zippopotam.us/us/${data.zip_code}`);
                             const zipData = await zipResponse.json();
                             
                             if (zipData.places && zipData.places.length > 0) {
                                 data.latitude = Number(zipData.places[0].latitude);
                                 data.longitude = Number(zipData.places[0].longitude);
-                                console.log(`ClubDetailPage - Found coordinates for ${data.zip_code}:`, { latitude: data.latitude, longitude: data.longitude });
                             } else {
                                 throw new Error('Club coordinates not available');
                             }

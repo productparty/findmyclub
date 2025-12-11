@@ -15,14 +15,7 @@ import { useSearchState } from '../../hooks/useSearchState';
 import './RecommendClub.css';
 import { divIcon } from 'leaflet';
 import { Marker } from 'react-leaflet';
-
-interface Club {
-  id: number;
-  name: string;
-  latitude: number;
-  longitude: number;
-  zip_code: string;
-}
+import type { Club } from '../../types/Club';
 
 const isValidCoordinate = (lat: number, lng: number) => 
   !isNaN(lat) && !isNaN(lng) && 
@@ -81,7 +74,6 @@ const RecommendClubUpdated: React.FC = () => {
       }
 
       const data = await response.json();
-      console.log('API Response:', data);
 
       if (!data.courses || !Array.isArray(data.courses)) {
         throw new Error('Invalid response format');

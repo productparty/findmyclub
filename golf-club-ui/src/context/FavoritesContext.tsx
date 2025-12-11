@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
-import type { FavoriteClub } from '../types/golf-club';
+import type { FavoriteClub } from '../types/Club';
 
 interface FavoritesContextType {
   favorites: string[];
@@ -86,14 +86,12 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               // Try to get coordinates from zip code
               if (club.zip_code) {
                 try {
-                  console.log(`FavoritesContext - Fetching coordinates for club ${club.id || club.club_name} with zip code ${club.zip_code}`);
                   const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
                   const zipData = await zipResponse.json();
                   
                   if (zipData.places && zipData.places.length > 0) {
                     const latitude = Number(zipData.places[0].latitude);
                     const longitude = Number(zipData.places[0].longitude);
-                    console.log(`FavoritesContext - Found coordinates for ${club.zip_code}:`, { latitude, longitude });
                     
                     return {
                       ...club,

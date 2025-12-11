@@ -42,22 +42,16 @@ export const ClubDetail: React.FC = () => {
                 }
 
                 const data = await response.json();
-                console.log('Club data from API:', data);
                 
                 // If we don't have coordinates, try to get them from zip code
                 if ((!data.latitude || !data.longitude) && data.zip_code) {
                     try {
-                        console.log(`Fetching coordinates for club with zip code ${data.zip_code}`);
                         const zipResponse = await fetch(`https://api.zippopotam.us/us/${data.zip_code}`);
                         const zipData = await zipResponse.json();
                         
                         if (zipData.places && zipData.places.length > 0) {
                             data.latitude = Number(zipData.places[0].latitude);
                             data.longitude = Number(zipData.places[0].longitude);
-                            console.log(`Found coordinates for ${data.zip_code}:`, { 
-                                latitude: data.latitude, 
-                                longitude: data.longitude 
-                            });
                         }
                     } catch (error) {
                         console.error(`Failed to get coordinates for zip code ${data.zip_code}:`, error);
@@ -73,7 +67,6 @@ export const ClubDetail: React.FC = () => {
                     
                     if (!isNaN(lat) && !isNaN(lng) && 
                         Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-                        console.log('Setting map center to club coordinates:', [lat, lng]);
                         setMapCenter([lat, lng]);
                     }
                 }

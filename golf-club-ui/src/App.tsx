@@ -32,14 +32,7 @@ import PasswordResetConfirm from './pages/PasswordReset/PasswordResetConfirm';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import CreateAccountSuccessful from './pages/CreateAccount/CreateAccountSuccessful';
 
-// Log environment info in development or when debugging
-if (import.meta.env.DEV || import.meta.env.VITE_DEBUG === 'true') {
-  console.log('Environment:', import.meta.env.MODE);
-  console.log('API URL:', config.API_URL);
-  console.log('App URL:', config.APP_URL);
-  console.log('Supabase URL exists:', !!config.SUPABASE_URL);
-  console.log('Supabase key exists:', !!config.SUPABASE_ANON_KEY);
-}
+// Environment configuration validated at build time
 
 const LoadingFallback = () => (
   <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">

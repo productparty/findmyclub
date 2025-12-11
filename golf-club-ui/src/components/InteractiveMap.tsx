@@ -6,16 +6,7 @@ import { MapContainer, TileLayer, useMap, Circle, Marker, Popup } from 'react-le
 import { LatLngBounds, LatLng } from 'leaflet';
 import L from 'leaflet';
 import { divIcon } from 'leaflet';
-
-interface Club {
-    id: string;
-    club_name: string;
-    address: string;
-    latitude?: number;
-    longitude?: number;
-    state: string;
-    zip_code: string;
-}
+import type { Club } from '../types/Club';
 
 interface InteractiveMapProps {
     clubs: Club[];
@@ -92,10 +83,6 @@ export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
     !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
     Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
   );
-
-  // Log for debugging
-  console.log('InteractiveMap - center:', center);
-  console.log('InteractiveMap - valid clubs:', validClubs.length);
   
   return (
     <Box ref={ref} sx={{ height: '100%', width: '100%' }}>
