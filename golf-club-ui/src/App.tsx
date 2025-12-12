@@ -11,9 +11,12 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { lazy, Suspense } from 'react';
 import { config } from './config';
 import { Analytics } from '@vercel/analytics/react';
+import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import ErrorPage from './pages/ErrorPage/ErrorPage';
 import { FavoritesProvider } from './context/FavoritesContext';
+import { analytics } from './utils/analytics';
 
 // Import pages
 import Dashboard from './pages/Home/Dashboard';
@@ -46,6 +49,8 @@ const queryClient = new QueryClient({
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5, // 5 minutes default stale time
+      gcTime: 1000 * 60 * 30, // 30 minutes garbage collection
     },
   },
 });

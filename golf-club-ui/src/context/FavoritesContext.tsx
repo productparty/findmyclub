@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { favoritesApi } from '../api/favorites';
 import { useAuth } from './AuthContext';
+import { analytics } from '../utils/analytics';
 import type { FavoriteClub } from '../types/Club';
 
 interface FavoritesContextType {
@@ -33,15 +34,8 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setError(null);
     
     try {
-      // Get favorite IDs
-      const { data: favoritesData, error: favoritesError } = await supabase
-        .from('favorites')
-        .select('golfclub_id')
-        .eq('profile_id', session.user.id);
-
-      if (favoritesError) throw favoritesError;
-      
-      const favoriteIds = favoritesData.map((f: { golfclub_id: string }) => f.golfclub_id);
+      // Get favorite IDs using API layer
+      const favoriteIds = await favoritesApi.getFavoriteIds(session.user.id);
       setFavorites(favoriteIds);
       
       if (favoriteIds.length === 0) {
@@ -50,72 +44,50 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return;
       }
 
-      // Get full club details - use the correct column names from your database
-      const fetchFavoriteClubs = async (favoriteIds: string[]) => {
-        try {
-          // Use the correct relationship name 'golfclub' instead of 'clubs'
-          const { data, error } = await supabase
-            .from('favorites')
-            .select('id, golfclub_id, golfclub:golfclub_id(*)')
-            .eq('profile_id', session.user.id)
-            .in('golfclub_id', favoriteIds);
+      // Get full club details using API layer
+      const clubs = await favoritesApi.getFavoriteClubs(session.user.id);
+      
+      // Ensure coordinates for clubs that don't have them
+      const clubsWithCoordinates = await Promise.all(
+        clubs.map(async (club) => {
+          // Skip if club already has valid coordinates
+          if (
+            club.latitude && 
+            club.longitude && 
+            !isNaN(Number(club.latitude)) && 
+            !isNaN(Number(club.longitude)) &&
+            Math.abs(Number(club.latitude)) <= 90 && 
+            Math.abs(Number(club.longitude)) <= 180
+          ) {
+            return club;
+          }
           
-          if (error) throw error;
-          
-          // Transform the data to match the expected format
-          const clubs = data.map((item: any) => ({
-            id: item.golfclub_id,
-            ...item.golfclub
-          }));
-          
-          // Fetch coordinates for clubs that don't have them
-          const clubsWithCoordinates = await Promise.all(
-            clubs.map(async (club: any) => {
-              // Skip if club already has valid coordinates
-              if (
-                club.latitude && 
-                club.longitude && 
-                !isNaN(Number(club.latitude)) && 
-                !isNaN(Number(club.longitude)) &&
-                Math.abs(Number(club.latitude)) <= 90 && 
-                Math.abs(Number(club.longitude)) <= 180
-              ) {
-                return club;
-              }
+          // Try to get coordinates from zip code
+          if (club.zip_code) {
+            try {
+              const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
+              const zipData = await zipResponse.json();
               
-              // Try to get coordinates from zip code
-              if (club.zip_code) {
-                try {
-                  const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
-                  const zipData = await zipResponse.json();
-                  
-                  if (zipData.places && zipData.places.length > 0) {
-                    const latitude = Number(zipData.places[0].latitude);
-                    const longitude = Number(zipData.places[0].longitude);
-                    
-                    return {
-                      ...club,
-                      latitude,
-                      longitude
-                    };
-                  }
-                } catch (error) {
-                  console.error(`FavoritesContext - Failed to get coordinates for zip code ${club.zip_code}:`, error);
-                }
+              if (zipData.places && zipData.places.length > 0) {
+                const latitude = Number(zipData.places[0].latitude);
+                const longitude = Number(zipData.places[0].longitude);
+                
+                return {
+                  ...club,
+                  latitude,
+                  longitude,
+                };
               }
-              
-              return club;
-            })
-          );
+            } catch (err) {
+              console.error(`Failed to get coordinates for zip code ${club.zip_code}:`, err);
+            }
+          }
           
-          setFavoriteClubs(clubsWithCoordinates);
-        } catch (err) {
-          console.error('Error fetching favorite clubs:', err);
-          setError(err instanceof Error ? err.message : 'Failed to fetch favorite clubs');
-        }
-      };
-
-      await fetchFavoriteClubs(favoriteIds);
+          return club;
+        })
+      );
+      
+      setFavoriteClubs(clubsWithCoordinates);
     } catch (err) {
       console.error('Error fetching favorites:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch favorites');
@@ -141,24 +113,13 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     try {
       if (isFav) {
-        // Remove from favorites
-        const { error } = await supabase
-          .from('favorites')
-          .delete()
-          .eq('profile_id', session.user.id)
-          .eq('golfclub_id', clubId);
-          
-        if (error) throw error;
+        // Remove from favorites using API layer
+        await favoritesApi.removeFavorite(session.user.id, clubId);
+        analytics.favoriteRemoved(clubId);
       } else {
-        // Add to favorites
-        const { error } = await supabase
-          .from('favorites')
-          .insert([{ 
-            profile_id: session.user.id,
-            golfclub_id: clubId
-          }]);
-          
-        if (error) throw error;
+        // Add to favorites using API layer
+        await favoritesApi.addFavorite(session.user.id, clubId);
+        analytics.favoriteAdded(clubId);
         
         // Fetch the full club details for the newly added favorite
         await fetchFavorites();
@@ -169,6 +130,7 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setFavoriteClubs(previousFavoriteClubs);
       console.error('Error toggling favorite:', err);
       setError(err instanceof Error ? err.message : 'Failed to update favorite');
+      analytics.error('favorite_toggle_failed', { club_id: clubId });
     }
   };
 

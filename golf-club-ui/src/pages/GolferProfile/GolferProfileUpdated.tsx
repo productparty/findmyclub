@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import PageLayout from '../../components/PageLayout';
-import { supabase } from '../../lib/supabase';
+import { profileApi } from '../../api/profile';
 
 interface GolferProfile {
   id: string;
@@ -79,57 +79,43 @@ const GolferProfileUpdated: React.FC = () => {
     const fetchProfile = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session?.user.id)
-        .single();
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          const { data: newProfile, error: insertError } = await supabase
-            .from('profiles')
-            .insert([
-              { 
-                id: session?.user.id,
-                email: session?.user.email,
-              }
-            ])
-            .select()
-            .single();
-
-          if (insertError) throw insertError;
-          if (newProfile) {
-            setProfile(prev => ({
-              ...prev,
-              ...newProfile,
-              email: session?.user.email || prev.email,
-            }));
-          }
-        } else {
-          throw error;
-        }
-      } else if (data) {
-        setProfile(prev => ({
-          ...prev,
-          ...data,
-          email: session?.user.email || prev.email,
-        }));
+      if (!session?.user?.id) {
+        setIsLoading(false);
+        return;
       }
-      } catch (error) {
-        console.error('Error fetching profile:', error);
+
+      let profileData = await profileApi.getProfile(session.user.id);
+      
+      if (!profileData) {
+        // Create profile if it doesn't exist
+        profileData = await profileApi.createProfile({
+          id: session.user.id,
+          email: session.user.email || '',
+        });
+      }
+
+      setProfile(prev => ({
+        ...prev,
+        ...profileData!,
+        email: session.user.email || prev.email,
+      }));
+      setError('');
+    } catch (error) {
+      console.error('Error fetching profile:', error);
       setError('Failed to load profile');
     } finally {
-        setIsLoading(false);
-      }
-    };
+      setIsLoading(false);
+    }
+  };
 
   const handleSave = async () => {
+    if (!session?.user?.id) return;
+    
     setIsSubmitting(true);
     try {
       const dataToSave = {
-        id: session?.user.id,
-        email: session?.user.email,
+        id: session.user.id,
+        email: session.user.email || '',
         first_name: profile.first_name,
         last_name: profile.last_name,
         handicap_index: profile.handicap_index,
@@ -153,19 +139,13 @@ const GolferProfileUpdated: React.FC = () => {
         golf_lessons: !!profile.golf_lessons,
       };
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .upsert(dataToSave, {
-          onConflict: 'id'
-        });
-
-      if (error) throw error;
+      await profileApi.updateProfile(session.user.id, dataToSave);
 
       setSuccess('Profile saved successfully!');
       await fetchProfile();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving profile:', error);
-      setError(error.message || 'Failed to save profile');
+      setError(error instanceof Error ? error.message : 'Failed to save profile');
     } finally {
       setIsSubmitting(false);
     }

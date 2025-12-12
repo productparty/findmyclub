@@ -1,12 +1,13 @@
 // components/InteractiveMap.tsx
-import React, { useEffect, useRef, forwardRef, useMemo } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { Box } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, useMap, Circle, Marker, Popup } from 'react-leaflet';
-import { LatLngBounds, LatLng } from 'leaflet';
+import { LatLngBounds } from 'leaflet';
 import L from 'leaflet';
 import { divIcon } from 'leaflet';
 import type { Club } from '../types/Club';
+import { calculateBounds, filterValidCoordinates, debounce } from '../utils/mapOptimization';
 
 interface InteractiveMapProps {
     clubs: Club[];
@@ -37,38 +38,53 @@ export const createNumberedMarker = (index: number) => {
   });
 };
 
-export const MapBounds: React.FC<{ clubs: any[] }> = ({ clubs }) => {
+export const MapBounds: React.FC<{ clubs: Club[] }> = ({ clubs }) => {
     const map = useMap();
 
+    // Debounce map updates to prevent excessive re-renders
+    const updateBounds = useCallback(
+        debounce((clubsToFit: Club[]) => {
+            if (!clubsToFit.length) return;
+
+            if (clubsToFit.length === 1) {
+                // For single club view, zoom in closer
+                const club = clubsToFit[0];
+                const lat = Number(club.latitude);
+                const lng = Number(club.longitude);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    map.setView([lat, lng], 15);
+                }
+                return;
+            }
+
+            // Use optimized bounds calculation
+            const validCoords = filterValidCoordinates(clubsToFit);
+            if (validCoords.length === 0) {
+                map.setView([39.8283, -98.5795], 4);
+                return;
+            }
+
+            const bounds = calculateBounds(validCoords);
+            if (bounds) {
+                const latLngBounds = new LatLngBounds(
+                    [[bounds.minLat, bounds.minLng], [bounds.maxLat, bounds.maxLng]]
+                );
+                map.fitBounds(latLngBounds, { padding: [50, 50] });
+            } else {
+                map.setView([39.8283, -98.5795], 4);
+            }
+        }, 100),
+        [map]
+    );
+
     useEffect(() => {
-        if (!clubs.length) return;
-
-        if (clubs.length === 1) {
-            // For single club view, zoom in closer
-            const club = clubs[0];
-            map.setView([club.lat || club.latitude, club.lng || club.longitude], 15);
-            return;
-        }
-
-        // Original bounds logic for multiple clubs
-        const bounds = new LatLngBounds(
-            clubs.map(club => [
-                club.latitude || 0,
-                club.longitude || 0
-            ] as [number, number])
-        );
-
-        if (bounds.isValid()) {
-            map.fitBounds(bounds, { padding: [50, 50] });
-        } else {
-            map.setView([39.8283, -98.5795], 4);
-        }
-    }, [clubs, map]);
+        updateBounds(clubs);
+    }, [clubs, updateBounds]);
 
     return null;
 };
 
-export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
+export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   clubs,
   center,
   radius,
@@ -76,21 +92,28 @@ export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
   showNumbers = true,
   initialZoom = 8,
   children
-}, ref) => {
-  // Ensure all clubs have valid coordinates and convert to numbers
-  const validClubs = clubs.filter(club => 
-    club.latitude && club.longitude && 
-    !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-    Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+}) => {
+  // Memoize valid clubs to prevent unnecessary recalculations
+  const validClubs = useMemo(() => {
+    return filterValidCoordinates(clubs);
+  }, [clubs]);
+
+  // Memoize marker click handler
+  const handleMarkerClick = useCallback(
+    (clubId: string) => {
+      onMarkerClick?.(clubId);
+    },
+    [onMarkerClick]
   );
   
   return (
-    <Box ref={ref} sx={{ height: '100%', width: '100%' }}>
+    <Box sx={{ height: '100%', width: '100%' }}>
       <Box sx={{ height: '400px', width: '100%', borderRadius: 1, overflow: 'hidden' }}>
         <MapContainer 
           center={[Number(center[0]), Number(center[1])]} 
           zoom={initialZoom} 
           style={{ height: '100%', width: '100%' }}
+          scrollWheelZoom={true}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -113,7 +136,7 @@ export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
               position={[Number(club.latitude), Number(club.longitude)]}
               icon={createNumberedMarker(index)}
               eventHandlers={{
-                click: () => onMarkerClick && onMarkerClick(club.id)
+                click: () => handleMarkerClick(club.id)
               }}
             >
               <Popup>
@@ -127,7 +150,7 @@ export const InteractiveMap = forwardRef<HTMLDivElement, InteractiveMapProps>(({
       </Box>
     </Box>
   );
-});
+};
 
 InteractiveMap.displayName = 'InteractiveMap';
 

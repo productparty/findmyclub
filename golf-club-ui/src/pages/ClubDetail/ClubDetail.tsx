@@ -6,6 +6,7 @@ import PageLayout from '../../components/PageLayout';
 import { InteractiveMap } from '../../components/InteractiveMap';
 import { config } from '../../config';
 import { useAuth } from '../../context/AuthContext';
+import { analytics } from '../../utils/analytics';
 import type { Club } from '../../types/Club';
 import { Marker, Popup } from 'react-leaflet';
 import { divIcon } from 'leaflet';
@@ -59,6 +60,11 @@ export const ClubDetail: React.FC = () => {
                 }
                 
                 setClub(data);
+                
+                // Track club view
+                if (id) {
+                    analytics.clubViewed(id);
+                }
                 
                 // Set map center immediately if we have valid coordinates
                 if (data.latitude && data.longitude) {

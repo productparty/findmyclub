@@ -1,10 +1,18 @@
 import React from 'react';
 import { Box } from '@mui/material';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import Header from './Header';
 import Footer from './Footer';
+import { analytics } from '../utils/analytics';
 
 const Layout: React.FC = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    analytics.pageView(location.pathname + location.search);
+  }, [location]);
+
   return (
     <Box sx={{ 
       display: 'flex', 
