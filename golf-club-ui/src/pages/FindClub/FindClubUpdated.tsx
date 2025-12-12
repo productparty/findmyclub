@@ -15,6 +15,7 @@ import { useFavorites } from '../../hooks/useFavorites';
 import { InteractiveMap } from '../../components/InteractiveMap';
 import { Pagination } from '../../components/common/Pagination';
 import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
+import { analytics } from '../../utils/analytics';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { divIcon } from 'leaflet';
 import { Marker, Popup } from 'react-leaflet';
@@ -129,6 +130,14 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     await searchClubs(filters);
+    
+    // Track search analytics
+    analytics.clubSearch({
+      zip_code: filters.zipCode,
+      radius: filters.radius,
+      price_range: filters.preferred_price_range || '',
+      difficulty: filters.preferred_difficulty || '',
+    });
     
     // Update URL params
     const urlParams: Record<string, string> = {

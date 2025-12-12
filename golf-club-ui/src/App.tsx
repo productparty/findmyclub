@@ -11,12 +11,9 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { lazy, Suspense } from 'react';
 import { config } from './config';
 import { Analytics } from '@vercel/analytics/react';
-import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import ErrorPage from './pages/ErrorPage/ErrorPage';
 import { FavoritesProvider } from './context/FavoritesContext';
-import { analytics } from './utils/analytics';
 
 // Import pages
 import Dashboard from './pages/Home/Dashboard';

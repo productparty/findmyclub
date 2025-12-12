@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { favoritesApi } from '../api/favorites';
 import { useAuth } from './AuthContext';
 import { analytics } from '../utils/analytics';
-import type { FavoriteClub } from '../types/Club';
+import type { FavoriteClub, Club } from '../types/Club';
 
 interface FavoritesContextType {
   favorites: string[];
@@ -51,21 +51,25 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const clubsWithCoordinates = await Promise.all(
         clubs.map(async (club) => {
           // Skip if club already has valid coordinates
+          const lat = (club as Club).latitude ?? null;
+          const lng = (club as Club).longitude ?? null;
+          
           if (
-            club.latitude && 
-            club.longitude && 
-            !isNaN(Number(club.latitude)) && 
-            !isNaN(Number(club.longitude)) &&
-            Math.abs(Number(club.latitude)) <= 90 && 
-            Math.abs(Number(club.longitude)) <= 180
+            lat && 
+            lng && 
+            !isNaN(Number(lat)) && 
+            !isNaN(Number(lng)) &&
+            Math.abs(Number(lat)) <= 90 && 
+            Math.abs(Number(lng)) <= 180
           ) {
             return club;
           }
           
           // Try to get coordinates from zip code
-          if (club.zip_code) {
+          const zipCode = (club as Club).zip_code;
+          if (zipCode) {
             try {
-              const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
+              const zipResponse = await fetch(`https://api.zippopotam.us/us/${zipCode}`);
               const zipData = await zipResponse.json();
               
               if (zipData.places && zipData.places.length > 0) {
@@ -76,10 +80,10 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                   ...club,
                   latitude,
                   longitude,
-                };
+                } as FavoriteClub;
               }
             } catch (err) {
-              console.error(`Failed to get coordinates for zip code ${club.zip_code}:`, err);
+              console.error(`Failed to get coordinates for zip code ${zipCode}:`, err);
             }
           }
           
@@ -106,7 +110,7 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Optimistic update - update UI immediately
     if (isFav) {
       setFavorites(prev => prev.filter(id => id !== clubId));
-      setFavoriteClubs(prev => prev.filter(club => club.id !== clubId));
+      setFavoriteClubs(prev => prev.filter(club => (club as Club).id !== clubId));
     } else {
       setFavorites(prev => [...prev, clubId]);
     }

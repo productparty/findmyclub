@@ -7,7 +7,7 @@ import { LatLngBounds } from 'leaflet';
 import L from 'leaflet';
 import { divIcon } from 'leaflet';
 import type { Club } from '../types/Club';
-import { calculateBounds, filterValidCoordinates, debounce } from '../utils/mapOptimization';
+import { calculateBounds, debounce } from '../utils/mapOptimization';
 
 interface InteractiveMapProps {
     clubs: Club[];
@@ -57,14 +57,25 @@ export const MapBounds: React.FC<{ clubs: Club[] }> = ({ clubs }) => {
                 return;
             }
 
-            // Use optimized bounds calculation
-            const validCoords = filterValidCoordinates(clubsToFit);
-            if (validCoords.length === 0) {
+            // Filter valid coordinates
+            const validClubs = clubsToFit.filter(club => 
+              club.latitude && club.longitude && 
+              !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+              Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+            );
+
+            if (validClubs.length === 0) {
                 map.setView([39.8283, -98.5795], 4);
                 return;
             }
 
-            const bounds = calculateBounds(validCoords);
+            // Convert to coordinates for bounds calculation
+            const coords = validClubs.map(club => ({
+              latitude: Number(club.latitude),
+              longitude: Number(club.longitude),
+            }));
+
+            const bounds = calculateBounds(coords);
             if (bounds) {
                 const latLngBounds = new LatLngBounds(
                     [[bounds.minLat, bounds.minLng], [bounds.maxLat, bounds.maxLng]]
@@ -95,7 +106,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 }) => {
   // Memoize valid clubs to prevent unnecessary recalculations
   const validClubs = useMemo(() => {
-    return filterValidCoordinates(clubs);
+    return clubs.filter(club => 
+      club.latitude && club.longitude && 
+      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+    );
   }, [clubs]);
 
   // Memoize marker click handler

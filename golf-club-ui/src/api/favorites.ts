@@ -36,22 +36,22 @@ export const favoritesApi = {
       throw new Error(`Failed to fetch favorite clubs: ${error.message}`);
     }
 
-    // Transform and validate the data
-    const clubs = data.map((item: any) => {
-      const clubData = {
-        id: item.golfclub_id,
-        ...item.golfclub,
-      };
-      
-      // Validate with Zod
-      const validatedClub = ClubSchema.parse(clubData);
-      
-      return {
-        ...validatedClub,
-        golfclub_id: item.golfclub_id,
-        match_percentage: 100, // Default for favorites
-      } as FavoriteClub;
-    });
+          // Transform and validate the data
+          const clubs = data.map((item: { golfclub_id: string; golfclub: unknown }) => {
+            const clubData = {
+              id: item.golfclub_id,
+              ...(item.golfclub as Record<string, unknown>),
+            };
+            
+            // Validate with Zod
+            const validatedClub = ClubSchema.parse(clubData);
+            
+            return {
+              ...validatedClub,
+              golfclub_id: item.golfclub_id,
+              match_percentage: 100, // Default for favorites
+            } as FavoriteClub;
+          });
 
     return clubs;
   },
