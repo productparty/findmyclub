@@ -1,14 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Grid, Button, Alert, CircularProgress } from '@mui/material';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Box, Typography, Grid, Alert, CircularProgress } from '@mui/material';
 import ClubCard from '../../components/ClubCard';
 import PageLayout from '../../components/PageLayout';
 import { InteractiveMap } from '../../components/InteractiveMap';
-import { useNavigate, useLocation } from 'react-router-dom';
-import mapboxgl from 'mapbox-gl';
-import type { FavoriteRecord, FavoriteClub } from '../../types/Club';
-import { useFavorites } from '../../context/FavoritesContext';
+import { Pagination } from '../../components/common/Pagination';
+import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
+import { useNavigate } from 'react-router-dom';
+import type { FavoriteClub } from '../../types/Club';
+import { useFavorites } from '../../hooks/useFavorites';
 import { Marker } from 'react-leaflet';
 import { divIcon } from 'leaflet';
 
@@ -34,15 +33,14 @@ interface FavoriteResponse {
 const isValidCoordinate = (lat: number, lng: number): boolean =>
   !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
-const isValidGolfClub = (club: unknown): club is GolfClubResponse => {
+const isValidGolfClub = (club: unknown): club is FavoriteClub => {
   if (!club || typeof club !== 'object') return false;
   const c = club as any;
   return (
     typeof c.id === 'string' &&
-    typeof c.global_id === 'string' &&
     typeof c.club_name === 'string' &&
-    typeof c.latitude === 'number' &&
-    typeof c.longitude === 'number'
+    (typeof c.latitude === 'number' || c.latitude === null) &&
+    (typeof c.longitude === 'number' || c.longitude === null)
   );
 };
 
@@ -94,39 +92,31 @@ const calculateMapBounds = (clubs: any[]) => {
 };
 
 const Favorites: React.FC = () => {
-  const { favoriteClubs, isLoading, error, toggleFavorite } = useFavorites();
+  const { favoriteClubs, isLoading, error, toggleFavorite, isFavorite } = useFavorites();
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const ITEMS_PER_PAGE = 10;
-  const [mapCenter, setMapCenter] = useState<[number, number]>([-98.5795, 39.8283]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([39.8283, -98.5795]);
   const [mapZoom, setMapZoom] = useState(5);
   const navigate = useNavigate();
-  const mapRef = React.useRef<mapboxgl.Map | null>(null);
 
-  const getCurrentPageFavorites = () => {
+  const getCurrentPageFavorites = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     return favoriteClubs.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-  };
+  }, [favoriteClubs, currentPage]);
+  
+  const totalPages = Math.ceil(favoriteClubs.length / ITEMS_PER_PAGE);
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(Math.max(1, Math.min(newPage, totalPages)));
   };
 
-  const handleToggleFavorite = async (clubId: string) => {
-    await toggleFavorite(clubId);
-  };
-
-  useEffect(() => {
-    setTotalPages(Math.ceil(favoriteClubs.length / ITEMS_PER_PAGE));
-  }, [favoriteClubs]);
-
   useEffect(() => {
     if (favoriteClubs.length > 0) {
-      const { center, zoom } = calculateMapBounds(getCurrentPageFavorites());
+      const { center, zoom } = calculateMapBounds(getCurrentPageFavorites);
       setMapCenter(center as [number, number]);
       setMapZoom(zoom);
     }
-  }, [favoriteClubs, currentPage]);
+  }, [favoriteClubs, currentPage, getCurrentPageFavorites]);
 
   const handleClubClick = (clubId: string) => {
     if (!clubId) {
@@ -146,9 +136,9 @@ const Favorites: React.FC = () => {
         )}
 
         {isLoading ? (
-          <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-            <CircularProgress />
-          </Box>
+          <LoadingSkeleton count={5} />
+        ) : error ? (
+          <Alert severity="error">{error}</Alert>
         ) : favoriteClubs.length > 0 ? (
           <>
             <Box sx={{ height: '400px', mb: 3, borderRadius: 1 }}>
@@ -161,7 +151,7 @@ const Favorites: React.FC = () => {
                 initialZoom={mapZoom}
                 key={`favorites-map-${JSON.stringify(mapCenter)}-${currentPage}-${mapZoom}`}
               >
-                {getCurrentPageFavorites()
+                {getCurrentPageFavorites
                   .filter(club => 
                     club.latitude && club.longitude && 
                     !isNaN(club.latitude) && !isNaN(club.longitude) &&
@@ -198,7 +188,7 @@ const Favorites: React.FC = () => {
             </Box>
 
             <Grid container spacing={2}>
-              {getCurrentPageFavorites().map((club, index) => (
+              {getCurrentPageFavorites.map((club, index) => (
                 <Grid item xs={12} key={club.golfclub_id}>
                   <Box
                     sx={{
@@ -212,7 +202,7 @@ const Favorites: React.FC = () => {
                     <ClubCard
                       club={club}
                       isFavorite={true}
-                      onToggleFavorite={() => handleToggleFavorite(club.golfclub_id)}
+                      onToggleFavorite={() => toggleFavorite(club.golfclub_id || club.id)}
                       showToggle={true}
                       index={(currentPage - 1) * ITEMS_PER_PAGE + index}
                       showScore={false}
@@ -232,46 +222,12 @@ const Favorites: React.FC = () => {
             </Grid>
 
             {totalPages > 1 && (
-              <>
-                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 1 }}>
-                  <Button onClick={() => handlePageChange(1)} disabled={currentPage === 1} variant="outlined">
-                    First
-                  </Button>
-                  <Button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} variant="outlined">
-                    Previous
-                  </Button>
-
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const pageNum = currentPage - 2 + i;
-                    if (pageNum > 0 && pageNum <= totalPages) {
-                      return (
-                        <Button
-                          key={pageNum}
-                          onClick={() => handlePageChange(pageNum)}
-                          variant={pageNum === currentPage ? 'contained' : 'outlined'}
-                        >
-                          {pageNum}
-                        </Button>
-                      );
-                    }
-                    return null;
-                  })}
-
-                  <Button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    variant="outlined"
-                  >
-                    Next
-                  </Button>
-                  <Button onClick={() => handlePageChange(totalPages)} disabled={currentPage === totalPages} variant="outlined">
-                    Last
-                  </Button>
-                </Box>
-                <Typography variant="body2" sx={{ mt: 1, textAlign: 'center' }}>
-                  Page {currentPage} of {totalPages}
-                </Typography>
-              </>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+                totalItems={favoriteClubs.length}
+              />
             )}
           </>
         ) : (

@@ -1,29 +1,19 @@
-import React, { useState, useEffect, forwardRef } from 'react';
-import { Card, CardContent, Typography, Chip, Box, Divider, Grid, CircularProgress, Icon, FormControl, Select, SxProps, Theme } from '@mui/material';
+import React, { forwardRef, memo, useCallback } from 'react';
+import { Card, CardContent, Typography, Chip, Box, Grid, SxProps, Theme } from '@mui/material';
 import GolfCourseIcon from '@mui/icons-material/GolfCourse';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
-import LocationOnIcon from '@mui/icons-material/LocationOn';
 import StarIcon from '@mui/icons-material/Star';
-import { getWeatherForecast, getWeatherInfo } from '../utils/weather';
 import WbSunnyIcon from '@mui/icons-material/WbSunny';
 import CloudIcon from '@mui/icons-material/Cloud';
 import UmbrellaIcon from '@mui/icons-material/Umbrella';
 import ThunderstormIcon from '@mui/icons-material/Thunderstorm';
 import AcUnitIcon from '@mui/icons-material/AcUnit';
-import { SvgIcon } from '@mui/material';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import IconButton from '@mui/material/IconButton';
 import './ClubCard.css';
 import type { Club } from '../types/Club';
-
-interface WeatherData {
-  date: string;
-  maxTemp: number;
-  minTemp: number;
-  precipitation: number;
-  description: string;
-}
+import { useWeather } from '../hooks/useWeather';
 
 interface ClubCardProps {
   club: Club;
@@ -78,7 +68,7 @@ const getWeatherIcon = (weatherCode: number) => {
   }
 };
 
-const ClubCard = forwardRef<HTMLDivElement, ClubCardProps>(({
+const ClubCard = memo(forwardRef<HTMLDivElement, ClubCardProps>(({
   club,
   showScore,
   isFavorite,
@@ -88,38 +78,22 @@ const ClubCard = forwardRef<HTMLDivElement, ClubCardProps>(({
   sx,
   onClick
 }, ref) => {
-  const [weather, setWeather] = useState<WeatherData[]>([]);
-  const [isLoadingWeather, setIsLoadingWeather] = useState(false);
-
-  useEffect(() => {
-    const fetchWeather = async () => {
-      if (club.latitude && club.longitude) {
-        setIsLoadingWeather(true);
-        try {
-          const response = await getWeatherForecast(club.latitude, club.longitude);
-          const formattedWeather: WeatherData[] = response.daily.time.map((time, index) => ({
-            date: time,
-            maxTemp: response.daily.temperature_2m_max[index],
-            minTemp: response.daily.temperature_2m_min[index],
-            precipitation: response.daily.precipitation_probability_max[index],
-            description: response.daily.weathercode[index].toString()
-          }));
-          setWeather(formattedWeather);
-        } catch (error) {
-          console.error('Error fetching weather:', error);
-        }
-        setIsLoadingWeather(false);
-      }
-    };
-
-    fetchWeather();
-  }, [club.latitude, club.longitude]);
+  const { weather } = useWeather(club.latitude, club.longitude);
+  
+  const handleToggleFavorite = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleFavorite(club.id);
+  }, [club.id, onToggleFavorite]);
+  
+  const handleClick = useCallback(() => {
+    onClick?.();
+  }, [onClick]);
 
   return (
     <Card 
       ref={ref}
       sx={{ mb: 2, position: 'relative', ...sx }}
-      onClick={onClick}
+      onClick={handleClick}
     >
       <CardContent>
         <Typography variant="h6" component="div">
@@ -133,10 +107,7 @@ const ClubCard = forwardRef<HTMLDivElement, ClubCardProps>(({
 
         {showToggle && onToggleFavorite && (
           <IconButton
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleFavorite(club.id);
-            }}
+            onClick={handleToggleFavorite}
             className="heart-button"
             sx={{
               padding: '8px',
@@ -194,7 +165,7 @@ const ClubCard = forwardRef<HTMLDivElement, ClubCardProps>(({
               Three Day Weather Forecast:
             </Typography>
             <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
-              {weather.slice(0, 3).map((day: WeatherData) => (
+              {weather.slice(0, 3).map((day) => (
                 <Box key={day.date} sx={{ textAlign: 'center', minWidth: '80px' }}>
                   <Typography variant="caption" display="block">
                     {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}
@@ -226,7 +197,7 @@ const ClubCard = forwardRef<HTMLDivElement, ClubCardProps>(({
       </CardContent>
     </Card>
   );
-});
+}));
 
 ClubCard.displayName = 'ClubCard';
 

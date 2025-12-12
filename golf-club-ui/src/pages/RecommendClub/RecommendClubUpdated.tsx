@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Typography, Card, CardContent, Grid, CircularProgress,
   Alert, Box, TextField, FormControl, InputLabel, Select, MenuItem, Button
 } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
 import PageLayout from '../../components/PageLayout';
-import { config } from '../../config';
 import ClubCard from '../../components/ClubCard';
-import { supabase } from '../../lib/supabase';
+import { useClubSearch } from '../../hooks/useClubSearch';
+import { useFavorites } from '../../hooks/useFavorites';
 import { InteractiveMap } from '../../components/InteractiveMap';
+import { Pagination } from '../../components/common/Pagination';
+import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Link } from 'react-router-dom';
 import { useSearchState } from '../../hooks/useSearchState';
 import './RecommendClub.css';
 import { divIcon } from 'leaflet';
@@ -31,157 +32,47 @@ const RecommendClubUpdated: React.FC = () => {
   // Initialize state from saved search
   const [zipCode, setZipCode] = useState(searchState.zipCode);
   const [radius, setRadius] = useState(searchState.radius);
-  const [courses, setCourses] = useState(searchState.results || []);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const ITEMS_PER_PAGE = 10;
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [mapCenter, setMapCenter] = useState<[number, number]>([39.8283, -98.5795]);
   const [mapZoom, setMapZoom] = useState(4);
+  
+  // Use new hooks
+  const { clubs: courses, isLoading, error, getRecommendations } = useClubSearch({
+    token: session?.access_token,
+  });
+  const { toggleFavorite, isFavorite } = useFavorites();
 
   const handleSearch = async () => {
     if (!zipCode) {
-      setError('Please enter a zip code');
       return;
     }
 
-    setIsLoading(true);
-    setError('');
     setHasSearched(true);
-
-    try {
-      const queryParams = new URLSearchParams({
-        zip_code: zipCode,
-        radius: radius,
-        limit: '25'  // Maximum total results
-      });
-
-      const response = await fetch(
-        `${config.API_URL}/api/get_recommendations/?${queryParams}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`
-          }
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to fetch recommendations');
-      }
-
-      const data = await response.json();
-
-      if (!data.courses || !Array.isArray(data.courses)) {
-        throw new Error('Invalid response format');
-      }
-
-      const coursesWithCoords = await Promise.all(data.courses.map(async (course: Club) => {
-        try {
-          const zipResponse = await fetch(`https://api.zippopotam.us/us/${course.zip_code}`);
-          const zipData = await zipResponse.json();
-          return {
-            ...course,
-            latitude: Number(zipData.places[0].latitude),
-            longitude: Number(zipData.places[0].longitude)
-          };
-        } catch (error) {
-          console.error('Failed to get coordinates:', error);
-          return course; // Return without coords if lookup fails
-        }
-      }));
-
-      setCourses(coursesWithCoords);
-      setTotalPages(Math.ceil(coursesWithCoords.length / ITEMS_PER_PAGE));
-      setCurrentPage(1);
-
-      if (coursesWithCoords.length === 0) {
-        setError('No recommendations found for this location');
-      }
-
-      // Save search state when successful
+    await getRecommendations(zipCode, radius);
+    
+    // Save search state when successful
+    if (courses.length > 0) {
       setSearchState({
         zipCode,
         radius,
-        results: coursesWithCoords,
-        filters: {} // Add any additional filters here
+        results: courses,
+        filters: {}
       });
-    } catch (error: any) {
-      console.error('Error fetching recommendations:', error);
-      setError(error.message || 'Failed to load recommendations');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const getCurrentPageCourses = () => {
+  const getCurrentPageCourses = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return courses.slice(start, start + ITEMS_PER_PAGE);
-  };
+  }, [courses, currentPage]);
+  
+  const totalPages = Math.ceil(courses.length / ITEMS_PER_PAGE);
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(Math.max(1, Math.min(newPage, totalPages)));
   };
-
-  const fetchFavorites = async () => {
-    if (!session?.user?.id) return;
-    
-    const { data, error } = await supabase
-      .from('favorites')
-      .select('golfclub_id')
-      .eq('profile_id', session.user.id);
-      
-    if (error) {
-      console.error('Error fetching favorites:', error);
-      return;
-    }
-    
-    setFavorites(data.map((fav: { golfclub_id: string }) => fav.golfclub_id));
-  };
-
-  const handleToggleFavorite = async (clubId: string) => {
-    if (!session?.user?.id) return;
-
-    const isFavorite = favorites.includes(clubId);
-    
-    if (isFavorite) {
-      const { error } = await supabase
-        .from('favorites')
-        .delete()
-        .eq('profile_id', session.user.id)
-        .eq('golfclub_id', clubId);
-        
-      if (error) {
-        console.error('Error removing favorite:', error.message, error.details, error.hint);
-        return;
-      }
-
-      setFavorites(prev => prev.filter(id => id !== clubId));
-    } else {
-      const { error } = await supabase
-        .from('favorites')
-        .insert([
-          {
-            profile_id: session.user.id,
-            golfclub_id: clubId
-          }
-        ]);
-
-      if (error) {
-        console.error('Error adding favorite:', error.message, error.details, error.hint);
-        return;
-      }
-
-      setFavorites(prev => [...prev, clubId]);
-    }
-  };
-
-  useEffect(() => {
-    fetchFavorites();
-  }, [session?.user?.id]);
 
   // Navigate to detail with state
   const handleClubClick = (clubId: string) => {
@@ -353,13 +244,15 @@ const RecommendClubUpdated: React.FC = () => {
           </Alert>
         )}
 
+        {isLoading && <LoadingSkeleton count={5} />}
+
         {hasSearched && courses.length === 0 && !error && !isLoading && (
           <Alert severity="info">
             No recommendations found for this location.
           </Alert>
         )}
 
-        {courses.length > 0 && (
+        {!isLoading && courses.length > 0 && (
           <>
             {zipCode && radius && (
               <Box sx={{ 
@@ -412,10 +305,8 @@ const RecommendClubUpdated: React.FC = () => {
                       <ClubCard 
                         club={club}
                         showScore={true}
-                        isFavorite={favorites.includes(club.id)}
-                        onToggleFavorite={(clubId) => {
-                          handleToggleFavorite(clubId);
-                        }}
+                        isFavorite={isFavorite(club.id)}
+                        onToggleFavorite={toggleFavorite}
                         showToggle={true}
                         index={index}
                         onClick={() => navigate(`/clubs/${club.id}`)}
@@ -434,72 +325,12 @@ const RecommendClubUpdated: React.FC = () => {
               }
             </Grid>
 
-            {/* Pagination Controls */}
-            <Box sx={{ 
-              mt: 3, 
-              display: 'flex', 
-              flexWrap: 'wrap',
-              justifyContent: 'center', 
-              gap: { xs: 0.5, sm: 1 },
-              '& .MuiButton-root': {
-                minWidth: { xs: '40px', sm: 'auto' },
-                px: { xs: 1, sm: 2 },
-                fontSize: { xs: '0.75rem', sm: '0.875rem' }
-              }
-            }}>
-              <Button
-                onClick={() => handlePageChange(1)}
-                disabled={currentPage === 1}
-                variant="outlined"
-              >
-                First
-              </Button>
-              <Button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                variant="outlined"
-              >
-                Previous
-              </Button>
-              
-              {/* Page numbers */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const pageNum = currentPage - 2 + i;
-                if (pageNum > 0 && pageNum <= totalPages) {
-                  return (
-                    <Button
-                      key={pageNum}
-                      onClick={() => handlePageChange(pageNum)}
-                      variant={pageNum === currentPage ? "contained" : "outlined"}
-                    >
-                      {pageNum}
-                    </Button>
-                  );
-                }
-                return null;
-              })}
-              
-              <Button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                variant="outlined"
-              >
-                Next
-              </Button>
-              <Button
-                onClick={() => handlePageChange(totalPages)}
-                disabled={currentPage === totalPages}
-                variant="outlined"
-              >
-                Last
-              </Button>
-            </Box>
-            <Typography 
-              variant="body2" 
-              sx={{ mt: 1, textAlign: 'center' }}
-            >
-              Page {currentPage} of {totalPages}
-            </Typography>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={handlePageChange}
+              totalItems={courses.length}
+            />
           </>
         )}
       </PageLayout>

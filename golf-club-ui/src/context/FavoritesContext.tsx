@@ -127,9 +127,19 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const toggleFavorite = async (clubId: string) => {
     if (!session?.user?.id) return;
 
+    const isFav = favorites.includes(clubId);
+    const previousFavorites = [...favorites];
+    const previousFavoriteClubs = [...favoriteClubs];
+    
+    // Optimistic update - update UI immediately
+    if (isFav) {
+      setFavorites(prev => prev.filter(id => id !== clubId));
+      setFavoriteClubs(prev => prev.filter(club => club.id !== clubId));
+    } else {
+      setFavorites(prev => [...prev, clubId]);
+    }
+
     try {
-      const isFav = favorites.includes(clubId);
-      
       if (isFav) {
         // Remove from favorites
         const { error } = await supabase
@@ -139,9 +149,6 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           .eq('golfclub_id', clubId);
           
         if (error) throw error;
-        
-        setFavorites(prev => prev.filter(id => id !== clubId));
-        setFavoriteClubs(prev => prev.filter(club => club.id !== clubId));
       } else {
         // Add to favorites
         const { error } = await supabase
@@ -153,11 +160,13 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           
         if (error) throw error;
         
-        setFavorites(prev => [...prev, clubId]);
         // Fetch the full club details for the newly added favorite
         await fetchFavorites();
       }
     } catch (err) {
+      // Rollback optimistic update on error
+      setFavorites(previousFavorites);
+      setFavoriteClubs(previousFavoriteClubs);
       console.error('Error toggling favorite:', err);
       setError(err instanceof Error ? err.message : 'Failed to update favorite');
     }

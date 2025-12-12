@@ -10,9 +10,11 @@ import PageLayout from '../../components/PageLayout';
 import ClubCard from '../../components/ClubCard';
 import type { Club } from '../../types/Club';
 import { useAuth } from '../../context/AuthContext';
-import { config } from '../../config';
-import { supabase } from '../../lib/supabase';
+import { useClubSearch } from '../../hooks/useClubSearch';
+import { useFavorites } from '../../hooks/useFavorites';
 import { InteractiveMap } from '../../components/InteractiveMap';
+import { Pagination } from '../../components/common/Pagination';
+import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { divIcon } from 'leaflet';
 import { Marker, Popup } from 'react-leaflet';
@@ -47,11 +49,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   const { session } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [clubs, setClubs] = useState<Club[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const ITEMS_PER_PAGE = 10;
   const [sortBy, setSortBy] = useState<SortOption>('');
   const [filters, setFilters] = useState<Filters>({
@@ -73,14 +71,17 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     club_fitting: false,
     golf_lessons: false,
   });
-  const [favorites, setFavorites] = useState<string[]>([]);
   const [showOnlyFavorites, setShowOnlyFavorites] = useState(false);
   const [mapCenter, setMapCenter] = useState<[number, number]>([39.8283, -98.5795]);
-  const [isSticky, setIsSticky] = useState(false);
-  const [filteredClubs, setFilteredClubs] = useState<Club[]>([]);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  
+  // Use new hooks
+  const { clubs, isLoading, error, searchClubs, clearResults } = useClubSearch({
+    token: session?.access_token,
+  });
+  const { favorites, toggleFavorite, isFavorite } = useFavorites();
 
   const handleTextChange = (name: keyof Filters) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, [name]: event.target.value }));
@@ -114,8 +115,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       club_fitting: false,
       golf_lessons: false,
     });
-    setClubs([]);
-    setError('');
+    clearResults();
     setSortBy('');
     setCurrentPage(1);
     navigate('/find-club');
@@ -126,215 +126,26 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     navigate(`?${searchParams.toString()}`, { replace: true });
   };
 
-  const inspectClubData = (clubs: Club[]) => {
-    return clubs;
-  };
-
-  const transformClubData = async (data: any[]): Promise<Club[]> => {
-    // Process clubs in batches to avoid overwhelming the Zippopotam.us API
-    const batchSize = 5;
-    const batches = [];
-    
-    for (let i = 0; i < data.length; i += batchSize) {
-      batches.push(data.slice(i, i + batchSize));
-    }
-    
-    let transformedClubs: Club[] = [];
-    
-    for (const batch of batches) {
-      const batchResults = await Promise.all(batch.map(async (club) => {
-        let latitude = null;
-        let longitude = null;
-        
-        // Try all possible coordinate formats
-        if (club.latitude !== undefined && club.longitude !== undefined) {
-          latitude = club.latitude;
-          longitude = club.longitude;
-        } else if (club.lat !== undefined && club.lng !== undefined) {
-          latitude = club.lat;
-          longitude = club.lng;
-        } else if (club.coordinates && Array.isArray(club.coordinates) && club.coordinates.length === 2) {
-          longitude = club.coordinates[0];
-          latitude = club.coordinates[1];
-        }
-        
-        // If no coordinates found, try to get them from zip code
-        if ((latitude === null || longitude === null || 
-             isNaN(Number(latitude)) || isNaN(Number(longitude))) && 
-            club.zip_code) {
-          try {
-            const zipResponse = await fetch(`https://api.zippopotam.us/us/${club.zip_code}`);
-            
-            if (!zipResponse.ok) {
-              throw new Error(`Failed to fetch coordinates for zip code ${club.zip_code}`);
-            }
-            
-            const zipData = await zipResponse.json();
-            
-            if (zipData.places && zipData.places.length > 0) {
-              latitude = Number(zipData.places[0].latitude);
-              longitude = Number(zipData.places[0].longitude);
-            }
-          } catch (error) {
-            // Silently fail - coordinates will remain null
-          }
-        }
-        
-        // Ensure coordinates are valid numbers
-        latitude = typeof latitude === 'string' ? parseFloat(latitude) : latitude;
-        longitude = typeof longitude === 'string' ? parseFloat(longitude) : longitude;
-        
-        return {
-          ...club,
-          latitude: latitude,
-          longitude: longitude
-        };
-      }));
-      
-      transformedClubs = [...transformedClubs, ...batchResults];
-      
-      // Add a small delay between batches to avoid rate limiting
-      if (batches.length > 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
-    
-    return transformedClubs;
-  };
-
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    await searchClubs(filters);
     
-    if (!filters.zipCode) {
-      setError('Please enter a zip code');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const queryParams = new URLSearchParams({
-        zip_code: filters.zipCode,
-        radius: filters.radius,
-        limit: '100',
-      });
-
-      if (filters.preferred_price_range) {
-        queryParams.append('price_tier', filters.preferred_price_range);
-      }
-      if (filters.preferred_difficulty) {
-        queryParams.append('difficulty', filters.preferred_difficulty);
-      }
-      if (filters.number_of_holes) {
-        queryParams.append('number_of_holes', filters.number_of_holes);
-      }
-      if (filters.club_membership) {
-        queryParams.append('club_membership', filters.club_membership);
-      }
-
-      const booleanFilters = [
-        'driving_range', 'putting_green', 'chipping_green', 'practice_bunker',
-        'restaurant', 'lodging_on_site', 'motor_cart', 'pull_cart',
-        'golf_clubs_rental', 'club_fitting', 'golf_lessons'
-      ];
-
-      booleanFilters.forEach(filter => {
-        if (filters[filter as keyof Filters]) {
-          queryParams.append(filter, 'true');
-        }
-      });
-
-      const apiUrl = `${config.API_URL}/api/find_clubs/?${queryParams}`;
-
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
-        
-        try {
-          const errorData = JSON.parse(errorText);
-          throw new Error(errorData.detail || 'Failed to find clubs');
-        } catch (e) {
-          throw new Error(`Server error: ${response.status}`);
-        }
-      }
-
-      const data = await response.json();
-      
-      if (data.results && Array.isArray(data.results)) {
-        const transformedClubs = await transformClubData(data.results);
-        
-        inspectClubData(transformedClubs);
-        
-        setClubs(transformedClubs);
-        setTotalPages(Math.ceil(transformedClubs.length / ITEMS_PER_PAGE));
-        setCurrentPage(1);
-        
-        if (transformedClubs.length > 0) {
-          const clubWithCoords = transformedClubs.find(club => 
-            club.latitude && club.longitude && 
-            !isNaN(club.latitude) && !isNaN(club.longitude) &&
-            Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
-          );
-          if (clubWithCoords) {
-            setMapCenter([clubWithCoords.latitude!, clubWithCoords.longitude!]);
-          }
-        }
-        const urlParams: Record<string, string> = {
-          zipCode: filters.zipCode,
-          radius: filters.radius
-        };
-        
-        if (filters.preferred_price_range) urlParams.price = filters.preferred_price_range;
-        if (filters.preferred_difficulty) urlParams.difficulty = filters.preferred_difficulty;
-        if (filters.number_of_holes) urlParams.holes = filters.number_of_holes;
-        
-        updateURL(urlParams);
-      } else if (data.clubs && Array.isArray(data.clubs)) {
-        setClubs(data.clubs);
-        setTotalPages(Math.ceil(data.clubs.length / ITEMS_PER_PAGE));
-        setCurrentPage(1);
-        
-        if (data.clubs.length > 0 && data.center) {
-          setMapCenter([data.center.lat, data.center.lng]);
-        }
-        
-        const urlParams: Record<string, string> = {
-          zipCode: filters.zipCode,
-          radius: filters.radius
-        };
-        
-        if (filters.preferred_price_range) urlParams.price = filters.preferred_price_range;
-        if (filters.preferred_difficulty) urlParams.difficulty = filters.preferred_difficulty;
-        if (filters.number_of_holes) urlParams.holes = filters.number_of_holes;
-        
-        updateURL(urlParams);
-      } else {
-        setClubs([]);
-        setError('No clubs found matching your criteria');
-      }
-    } catch (err) {
-      console.error('Error searching clubs:', err);
-      setError(err instanceof Error ? err.message : 'Failed to search clubs');
-    } finally {
-      setIsLoading(false);
-    }
+    // Update URL params
+    const urlParams: Record<string, string> = {
+      zipCode: filters.zipCode,
+      radius: filters.radius
+    };
+    if (filters.preferred_price_range) urlParams.price = filters.preferred_price_range;
+    if (filters.preferred_difficulty) urlParams.difficulty = filters.preferred_difficulty;
+    if (filters.number_of_holes) urlParams.holes = filters.number_of_holes;
+    updateURL(urlParams);
   };
 
-  const getCurrentPageClubs = () => {
+  const getCurrentPageClubs = useMemo(() => {
     let filteredClubs = [...clubs];
     
     if (showOnlyFavorites) {
-      filteredClubs = filteredClubs.filter(club => favorites.includes(club.id));
+      filteredClubs = filteredClubs.filter(club => isFavorite(club.id));
     }
 
     if (sortBy) {
@@ -353,13 +164,15 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     }
 
     return filteredClubs;
-  };
+  }, [clubs, showOnlyFavorites, sortBy, isFavorite]);
 
   const getPaginatedClubs = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
-    return getCurrentPageClubs().slice(startIndex, endIndex);
-  }, [currentPage, clubs, showOnlyFavorites, sortBy]);
+    return getCurrentPageClubs.slice(startIndex, endIndex);
+  }, [currentPage, getCurrentPageClubs]);
+  
+  const totalPages = Math.ceil(getCurrentPageClubs.length / ITEMS_PER_PAGE);
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(Math.max(1, Math.min(newPage, totalPages)));
@@ -368,75 +181,6 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   const handleSortChange = (event: SelectChangeEvent<SortOption>) => {
     const value = event.target.value as SortOption;
     setSortBy(value);
-    
-    if (!value) {
-      handleSearch();
-      return;
-    }
-    
-    const sortedClubs = [...clubs].sort((a, b) => {
-      switch (value) {
-        case 'distance':
-          return (a.distance_miles || 0) - (b.distance_miles || 0);
-        case 'price':
-          const priceOrder: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3 };
-          return (priceOrder[a.price_tier] || 0) - (priceOrder[b.price_tier] || 0);
-        case 'difficulty':
-          const difficultyOrder: Record<string, number> = { 
-            'Easy': 1, 
-            'Medium': 2, 
-            'Hard': 3 
-          };
-          const aDifficulty = difficultyOrder[a.difficulty || ''] || 0;
-          const bDifficulty = difficultyOrder[b.difficulty || ''] || 0;
-          return aDifficulty - bDifficulty;
-        default:
-          return 0;
-        }
-      });
-    
-    setClubs(sortedClubs);
-  };
-
-  const fetchFavorites = async () => {
-    if (!session?.user?.id) return;
-    
-    const { data, error } = await supabase
-      .from('favorites')
-      .select('golfclub_id')
-      .eq('profile_id', session.user.id);
-      
-    if (error) {
-      console.error('Error fetching favorites:', error);
-      return;
-    }
-    
-    setFavorites(data.map((fav: { golfclub_id: string }) => fav.golfclub_id));
-  };
-
-  const handleToggleFavorite = async (clubId: string) => {
-    if (!session?.user?.id) return;
-
-    const isFavorite = favorites.includes(clubId);
-    
-    if (isFavorite) {
-      await supabase
-        .from('favorites')
-        .delete()
-        .eq('profile_id', session.user.id)
-        .eq('golfclub_id', clubId);
-    } else {
-      await supabase
-        .from('favorites')
-        .insert([
-          { 
-            profile_id: session.user.id,
-            golfclub_id: clubId
-          }
-        ]);
-    }
-    
-    fetchFavorites();
   };
 
   const handleMarkerClick = (clubId: string) => {
@@ -446,17 +190,20 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     }
   };
 
+  // Update map center when clubs change
   useEffect(() => {
-    fetchFavorites();
-  }, [session?.user?.id]);
-
-  useEffect(() => {
-    let filteredClubs = [...clubs];
-    if (showOnlyFavorites) {
-      filteredClubs = filteredClubs.filter(club => favorites.includes(club.id));
+    if (clubs.length > 0) {
+      const validCoords = clubs.filter(club => 
+        club.latitude && club.longitude && 
+        !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
+        Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
+      );
+      
+      if (validCoords.length > 0) {
+        setMapCenter([Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
+      }
     }
-    setTotalPages(Math.ceil(filteredClubs.length / ITEMS_PER_PAGE));
-  }, [clubs, showOnlyFavorites, favorites]);
+  }, [clubs]);
 
   useEffect(() => {
     let savedState = null;
@@ -893,7 +640,9 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                 </Alert>
               )}
 
-              {clubs.length > 0 && (
+              {isLoading && <LoadingSkeleton count={5} />}
+
+              {!isLoading && clubs.length > 0 && (
                 <>
                   {filters.zipCode && filters.radius && (
                     <Box sx={{ mb: 4, mt: 2, height: '400px' }}>
@@ -942,8 +691,8 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                         }}>
                           <ClubCard 
                             club={club}
-                            isFavorite={favorites.includes(club.id)}
-                            onToggleFavorite={handleToggleFavorite}
+                            isFavorite={isFavorite(club.id)}
+                            onToggleFavorite={toggleFavorite}
                             showToggle={true}
                             index={index}
                             showScore={true}
@@ -960,65 +709,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                     ))}
                   </Grid>
 
-                  <Box sx={{ 
-                    mt: 3, 
-                    display: 'flex', 
-                    flexWrap: 'wrap',
-                    justifyContent: 'center', 
-                    gap: 1 
-                  }}>
-                    <Button
-                      onClick={() => handlePageChange(1)}
-                      disabled={currentPage === 1}
-                      variant="outlined"
-                    >
-                      First
-                    </Button>
-                    <Button
-                      onClick={() => handlePageChange(currentPage - 1)}
-                      disabled={currentPage === 1}
-                      variant="outlined"
-                    >
-                      Previous
-                    </Button>
-                    
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      const pageNum = currentPage - 2 + i;
-                      if (pageNum > 0 && pageNum <= totalPages) {
-                        return (
-                          <Button
-                            key={pageNum}
-                            onClick={() => handlePageChange(pageNum)}
-                            variant={pageNum === currentPage ? "contained" : "outlined"}
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      }
-                      return null;
-                    })}
-                    
-                    <Button
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      disabled={currentPage === totalPages}
-                      variant="outlined"
-                    >
-                      Next
-                    </Button>
-                    <Button
-                      onClick={() => handlePageChange(totalPages)}
-                      disabled={currentPage === totalPages}
-                      variant="outlined"
-                    >
-                      Last
-                    </Button>
-                  </Box>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ mt: 1, textAlign: 'center' }}
-                  >
-                    Page {currentPage} of {totalPages}
-                  </Typography>
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    totalItems={getCurrentPageClubs.length}
+                  />
                 </>
               )}
             </Grid>
