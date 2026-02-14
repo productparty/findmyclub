@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback } from 'react';
-import { Card, CardContent, Typography, Chip, Box, Grid, SxProps, Theme } from '@mui/material';
+import { Card, CardContent, Typography, Chip, Box, Grid, SxProps, Theme, useTheme } from '@mui/material';
 import GolfCourseIcon from '@mui/icons-material/GolfCourse';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import StarIcon from '@mui/icons-material/Star';
@@ -14,6 +14,7 @@ import IconButton from '@mui/material/IconButton';
 import './ClubCard.css';
 import type { Club } from '../types/Club';
 import { useWeather } from '../hooks/useWeather';
+import { colors } from '../theme';
 
 interface ClubCardProps {
   club: Club;
@@ -31,9 +32,9 @@ const FeatureChip: React.FC<{ label: string; isMatch?: boolean }> = ({ label, is
     label={label}
     size="small"
     sx={{ 
-      borderColor: isMatch ? '#2E5A27' : 'grey.300',
-      color: isMatch ? '#2E5A27' : 'text.secondary',
-      backgroundColor: isMatch ? '#2E5A2710' : 'transparent',
+      borderColor: isMatch ? colors.primaryDark : 'grey.300',
+      color: isMatch ? colors.primaryDark : 'text.secondary',
+      backgroundColor: isMatch ? `${colors.primaryDark}10` : 'transparent',
       '& .MuiChip-label': {
         fontWeight: isMatch ? 'bold' : 'normal',
       }
@@ -45,26 +46,26 @@ const FeatureChip: React.FC<{ label: string; isMatch?: boolean }> = ({ label, is
 const getWeatherIcon = (weatherCode: number) => {
   switch (weatherCode) {
     case 0: // Clear sky
-      return <WbSunnyIcon sx={{ color: '#FFB300' }} />;
+      return <WbSunnyIcon sx={{ color: colors.weather.sunny }} />;
     case 1:
     case 2:
     case 3: // Cloudy
-      return <CloudIcon sx={{ color: '#78909C' }} />;
+      return <CloudIcon sx={{ color: colors.weather.cloudy }} />;
     case 51:
     case 53:
     case 55:
     case 61:
     case 63:
     case 65: // Rain
-      return <UmbrellaIcon sx={{ color: '#42A5F5' }} />;
+      return <UmbrellaIcon sx={{ color: colors.weather.rain }} />;
     case 71:
     case 73:
     case 75: // Snow
-      return <AcUnitIcon sx={{ color: '#90CAF9' }} />;
+      return <AcUnitIcon sx={{ color: colors.weather.snow }} />;
     case 95: // Thunderstorm
-      return <ThunderstormIcon sx={{ color: '#5C6BC0' }} />;
+      return <ThunderstormIcon sx={{ color: colors.weather.thunderstorm }} />;
     default:
-      return <CloudIcon sx={{ color: '#78909C' }} />;
+      return <CloudIcon sx={{ color: colors.weather.cloudy }} />;
   }
 };
 
@@ -187,7 +188,7 @@ const ClubCard = memo(forwardRef<HTMLDivElement, ClubCardProps>(({
             variant="body2" 
             sx={{ 
               mt: 2, 
-              color: club.score >= 80 ? '#2E5A27' : 'primary.main',
+              color: club.score >= 80 ? colors.primaryDark : 'primary.main',
               fontWeight: 'medium'
             }}
           >

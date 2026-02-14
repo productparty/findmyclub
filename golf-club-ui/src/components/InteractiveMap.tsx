@@ -5,9 +5,9 @@ import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, useMap, Circle, Marker, Popup } from 'react-leaflet';
 import { LatLngBounds } from 'leaflet';
 import L from 'leaflet';
-import { divIcon } from 'leaflet';
 import type { Club } from '../types/Club';
 import { calculateBounds, debounce } from '../utils/mapOptimization';
+import { createCustomMarker } from '../utils/mapUtils';
 
 interface InteractiveMapProps {
     clubs: Club[];
@@ -28,14 +28,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// Create a consistent marker style function
+// Create a consistent marker style function (uses shared utility)
 export const createNumberedMarker = (index: number) => {
-  return divIcon({
-    className: 'custom-div-icon',
-    html: `<div class='marker-pin'>${index + 1}</div>`,
-    iconSize: [30, 42],
-    iconAnchor: [15, 42]
-  });
+  return createCustomMarker(index + 1);
 };
 
 export const MapBounds: React.FC<{ clubs: Club[] }> = ({ clubs }) => {

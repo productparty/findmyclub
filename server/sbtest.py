@@ -8,41 +8,92 @@ import psycopg2
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-def test_direct_connection():
-    print("\n=== Testing Direct Connection ===")
-    db_config = {
-        "dbname": "postgres",
-        "user": "postgres",
-        "password": "Watso3mj16!",
-        "host": "db.nkknwkentrbbyzgqgpfd.supabase.co",
-        "port": "5432",
+def get_db_config(connection_type="direct"):
+    """Get database configuration from environment variables"""
+    db_password = os.getenv("DB_PASSWORD")
+    db_user = os.getenv("DB_USER", "postgres")
+    db_name = os.getenv("DB_NAME", "postgres")
+    supabase_project_ref = os.getenv("SUPABASE_PROJECT_REF")
+    
+    if not db_password:
+        raise ValueError("DB_PASSWORD environment variable is required")
+    
+    base_config = {
+        "dbname": db_name,
         "sslmode": "require"
     }
-    try_connection(db_config, "Direct")
+    
+    if connection_type == "direct":
+        db_host = os.getenv("DB_HOST")
+        db_port = os.getenv("DB_PORT", "5432")
+        
+        if not db_host:
+            raise ValueError("DB_HOST environment variable is required for direct connection")
+        
+        base_config.update({
+            "user": db_user,
+            "password": db_password,
+            "host": db_host,
+            "port": db_port
+        })
+    elif connection_type == "transaction":
+        db_pooler_host = os.getenv("DB_POOLER_HOST")
+        db_pooler_port = os.getenv("DB_POOLER_PORT", "6543")
+        
+        if not db_pooler_host:
+            raise ValueError("DB_POOLER_HOST environment variable is required for transaction pooler")
+        if not supabase_project_ref:
+            raise ValueError("SUPABASE_PROJECT_REF environment variable is required for pooler connections")
+        
+        base_config.update({
+            "user": f"{db_user}.{supabase_project_ref}",
+            "password": db_password,
+            "host": db_pooler_host,
+            "port": db_pooler_port
+        })
+    elif connection_type == "session":
+        db_pooler_host = os.getenv("DB_POOLER_HOST")
+        db_port = os.getenv("DB_PORT", "5432")
+        
+        if not db_pooler_host:
+            raise ValueError("DB_POOLER_HOST environment variable is required for session pooler")
+        if not supabase_project_ref:
+            raise ValueError("SUPABASE_PROJECT_REF environment variable is required for pooler connections")
+        
+        base_config.update({
+            "user": f"{db_user}.{supabase_project_ref}",
+            "password": db_password,
+            "host": db_pooler_host,
+            "port": db_port
+        })
+    else:
+        raise ValueError(f"Unknown connection type: {connection_type}")
+    
+    return base_config
+
+def test_direct_connection():
+    print("\n=== Testing Direct Connection ===")
+    try:
+        db_config = get_db_config("direct")
+        try_connection(db_config, "Direct")
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}")
 
 def test_transaction_pooler():
     print("\n=== Testing Transaction Pooler ===")
-    db_config = {
-        "dbname": "postgres",
-        "user": "postgres.nkknwkentrbbyzgqgpfd",
-        "password": "Watso3mj16!",
-        "host": "aws-0-us-east-2.pooler.supabase.com",
-        "port": "6543",
-        "sslmode": "require"
-    }
-    try_connection(db_config, "Transaction Pooler")
+    try:
+        db_config = get_db_config("transaction")
+        try_connection(db_config, "Transaction Pooler")
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}")
 
 def test_session_pooler():
     print("\n=== Testing Session Pooler ===")
-    db_config = {
-        "dbname": "postgres",
-        "user": "postgres.nkknwkentrbbyzgqgpfd",
-        "password": "Watso3mj16!",
-        "host": "aws-0-us-east-2.pooler.supabase.com",
-        "port": "5432",
-        "sslmode": "require"
-    }
-    try_connection(db_config, "Session Pooler")
+    try:
+        db_config = get_db_config("session")
+        try_connection(db_config, "Session Pooler")
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}")
 
 def try_connection(config, connection_type):
     print(f"\nTrying {connection_type} connection with:")
@@ -64,8 +115,12 @@ def try_connection(config, connection_type):
 
 def test_supabase():
     print("\n=== Testing Supabase API Connection ===")
-    supabase_url = "https://nkknwkentrbbyzgqgpfd.supabase.co"
-    supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ra253a2VudHJiYnl6Z3FncGZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcyMzA4MzYsImV4cCI6MjA1MjgwNjgzNn0.OyizXugP02ciUdXTOWxfTrp1HwsMgBM7FyeJ8le0_mM"
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    
+    if not supabase_url or not supabase_key:
+        print("❌ Missing required environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
+        return
     
     try:
         supabase = create_client(supabase_url, supabase_key)

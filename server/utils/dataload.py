@@ -1,13 +1,28 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 import requests
 import pandas as pd
 from supabase import create_client
 from datetime import datetime
 import time
 
-# Configuration
-SUPABASE_URL = 'https://nkknwkentrbbyzgqgpfd.supabase.co'
-SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ra253a2VudHJiYnl6Z3FncGZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzcyMzA4MzYsImV4cCI6MjA1MjgwNjgzNn0.OyizXugP02ciUdXTOWxfTrp1HwsMgBM7FyeJ8le0_mM'
-API_KEY = '0710d8e1-10aa-4b3f-b11c-cb8b4d7d451a'
+# Load environment variables
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# Configuration from environment
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+API_KEY = os.getenv("GOLF_API_KEY")
+
+# Validate required variables
+if not all([SUPABASE_URL, SUPABASE_KEY, API_KEY]):
+    raise ValueError(
+        "Missing required environment variables: "
+        "SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and GOLF_API_KEY must be set"
+    )
+
 API_BASE = 'https://www.golfapi.io/api/v2.3'
 API_ENDPOINTS = {
     'clubs': '/clubs',
@@ -143,9 +158,9 @@ def test_api():
         )
         print(f"/clubs response: {response.status_code}")
         print(f"/clubs response content: {response.text[:200]}...")
-    if response.status_code == 200:
+        if response.status_code == 200:
             log_result('success', '/clubs API connection test', response.json())
-    else:
+        else:
             log_result('error', f'/clubs status {response.status_code}', {'response': response.text})
     except Exception as e:
         print(f"Connection error: {str(e)}")
@@ -221,7 +236,7 @@ def fetch_michigan_courses():
                 
                 course_data.append(course_entry)
                 print(f"Processed course: {course.get('courseName')}")
-    else:
+            else:
                 print(f"Failed to get details for course {course.get('courseName')}: {course_detail_response.status_code}")
                 
         except Exception as e:

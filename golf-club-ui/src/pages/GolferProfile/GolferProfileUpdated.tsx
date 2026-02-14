@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import PageLayout from '../../components/PageLayout';
 import { profileApi } from '../../api/profile';
+import { getErrorMessage } from '../../utils/errorHandling';
 
 interface GolferProfile {
   id: string;
@@ -101,8 +102,7 @@ const GolferProfileUpdated: React.FC = () => {
       }));
       setError('');
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      setError('Failed to load profile');
+      setError(getErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -144,8 +144,7 @@ const GolferProfileUpdated: React.FC = () => {
       setSuccess('Profile saved successfully!');
       await fetchProfile();
     } catch (error: unknown) {
-      console.error('Error saving profile:', error);
-      setError(error instanceof Error ? error.message : 'Failed to save profile');
+      setError(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }

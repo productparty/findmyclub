@@ -14,14 +14,10 @@ import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSearchState } from '../../hooks/useSearchState';
 import './RecommendClub.css';
-import { divIcon } from 'leaflet';
 import { Marker } from 'react-leaflet';
 import type { Club } from '../../types/Club';
-
-const isValidCoordinate = (lat: number, lng: number) => 
-  !isNaN(lat) && !isNaN(lng) && 
-  lat >= -90 && lat <= 90 && 
-  lng >= -180 && lng <= 180;
+import { colors } from '../../theme';
+import { createCustomMarker, calculateMapCenter, calculateMapZoom, filterValidCoordinates } from '../../utils/mapUtils';
 
 const RecommendClubUpdated: React.FC = () => {
   const { session } = useAuth();
@@ -81,82 +77,14 @@ const RecommendClubUpdated: React.FC = () => {
     });
   };
 
-  const createCustomMarker = (number: number) => {
-    return divIcon({
-      className: 'custom-marker',
-      html: `<div style="
-        background-color: #1976d2;
-        color: white;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        border: 2px solid white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      ">${number}</div>`,
-    });
-  };
-
-  const calculateMapBounds = (clubs: any[]) => {
-    const validClubs = clubs.filter(club => 
-      club.latitude && club.longitude && 
-      !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-      Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-    );
-    
-    if (validClubs.length === 0) return { center: [39.8283, -98.5795], zoom: 4 };
-    
-    if (validClubs.length === 1) {
-      return { 
-        center: [Number(validClubs[0].latitude), Number(validClubs[0].longitude)], 
-        zoom: 10 
-      };
-    }
-    
-    // Calculate bounds
-    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    
-    validClubs.forEach(club => {
-      const lat = Number(club.latitude);
-      const lng = Number(club.longitude);
-      
-      minLat = Math.min(minLat, lat);
-      maxLat = Math.max(maxLat, lat);
-      minLng = Math.min(minLng, lng);
-      maxLng = Math.max(maxLng, lng);
-    });
-    
-    // Calculate center
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLng = (minLng + maxLng) / 2;
-    
-    // Calculate appropriate zoom level
-    const latDiff = maxLat - minLat;
-    const lngDiff = maxLng - minLng;
-    const maxDiff = Math.max(latDiff, lngDiff);
-    
-    let zoom = 10;
-    if (maxDiff > 10) zoom = 3;
-    else if (maxDiff > 5) zoom = 4;
-    else if (maxDiff > 3) zoom = 5;
-    else if (maxDiff > 1) zoom = 6;
-    else if (maxDiff > 0.5) zoom = 7;
-    else if (maxDiff > 0.1) zoom = 8;
-    else if (maxDiff > 0.05) zoom = 9;
-    
-    return { center: [centerLat, centerLng], zoom };
-  };
-
   useEffect(() => {
     if (courses.length > 0) {
-      const { center, zoom } = calculateMapBounds(getCurrentPageCourses());
-      setMapCenter(center as [number, number]);
+      const center = calculateMapCenter(getCurrentPageCourses());
+      const zoom = calculateMapZoom(getCurrentPageCourses());
+      setMapCenter(center);
       setMapZoom(zoom);
     }
-  }, [courses, currentPage]);
+  }, [courses, currentPage, getCurrentPageCourses]);
 
   return (
     <Box
@@ -270,19 +198,17 @@ const RecommendClubUpdated: React.FC = () => {
                   initialZoom={mapZoom}
                   key={`map-${currentPage}-${mapZoom}`}
                 >
-                  {getCurrentPageCourses().filter(c =>
-                    c.latitude && c.longitude &&
-                    isValidCoordinate(c.latitude, c.longitude)
-                  ).map((club, index) => (
-                    <Marker
-                      key={club.id}
-                      position={[club.latitude ?? 0, club.longitude ?? 0]}
-                      icon={createCustomMarker(index + 1)}
-                      eventHandlers={{
-                        click: () => handleClubClick(club.id)
-                      }}
-                    />
-                  ))}
+                  {filterValidCoordinates(getCurrentPageCourses())
+                    .map((club, index) => (
+                      <Marker
+                        key={club.id}
+                        position={[Number(club.latitude!), Number(club.longitude!)]}
+                        icon={createCustomMarker(index + 1)}
+                        eventHandlers={{
+                          click: () => handleClubClick(club.id)
+                        }}
+                      />
+                    ))}
                 </InteractiveMap>
               </Box>
             )}
@@ -294,11 +220,11 @@ const RecommendClubUpdated: React.FC = () => {
                   <Grid item xs={12} key={club.id}>
                     <Box
                       sx={{
-                        backgroundColor: club.score >= 80 ? 'rgba(46, 90, 39, 0.05)' : 'transparent',
+                        backgroundColor: club.score >= 80 ? `${colors.primaryDark}0D` : 'transparent',
                         borderRadius: 1,
                         transition: 'background-color 0.2s ease',
                         '&:hover': {
-                          backgroundColor: club.score >= 80 ? 'rgba(46, 90, 39, 0.08)' : 'rgba(0, 0, 0, 0.02)'
+                          backgroundColor: club.score >= 80 ? `${colors.primaryDark}14` : 'rgba(0, 0, 0, 0.02)'
                         }
                       }}
                     >

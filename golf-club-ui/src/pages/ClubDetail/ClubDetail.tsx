@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { analytics } from '../../utils/analytics';
 import type { Club } from '../../types/Club';
 import { Marker, Popup } from 'react-leaflet';
-import { divIcon } from 'leaflet';
+import { createCustomMarker, isValidCoordinate } from '../../utils/mapUtils';
 
 export const ClubDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -67,18 +67,13 @@ export const ClubDetail: React.FC = () => {
                 }
                 
                 // Set map center immediately if we have valid coordinates
-                if (data.latitude && data.longitude) {
-                    const lat = Number(data.latitude);
-                    const lng = Number(data.longitude);
-                    
-                    if (!isNaN(lat) && !isNaN(lng) && 
-                        Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-                        setMapCenter([lat, lng]);
-                    }
+                if (isValidCoordinate(data.latitude, data.longitude)) {
+                    setMapCenter([Number(data.latitude), Number(data.longitude)]);
                 }
             } catch (err) {
                 console.error('Error fetching club details:', err);
-                setError(err instanceof Error ? err.message : 'An error occurred');
+                const { getErrorMessage } = await import('../../utils/errorHandling');
+                setError(getErrorMessage(err));
             } finally {
                 setLoading(false);
             }
@@ -131,25 +126,17 @@ export const ClubDetail: React.FC = () => {
 
                 <Box sx={{ mb: 4, height: '400px' }}>
                     <InteractiveMap
-                        clubs={[club].filter(c => 
-                            c && c.latitude && c.longitude && 
-                            !isNaN(Number(c.latitude)) && !isNaN(Number(c.longitude))
-                        )}
+                        clubs={isValidCoordinate(club.latitude, club.longitude) ? [club] : []}
                         center={mapCenter}
                         radius={0}
                         onMarkerClick={() => {}}
                         initialZoom={15}
                         key={`club-detail-map-${club?.id}-${mapCenter[0]}-${mapCenter[1]}`}
                     >
-                        {club && club.latitude && club.longitude && (
+                        {isValidCoordinate(club.latitude, club.longitude) && (
                             <Marker
-                                position={[Number(club.latitude), Number(club.longitude)]}
-                                icon={divIcon({
-                                    className: 'custom-div-icon',
-                                    html: `<div class='marker-pin'>1</div>`,
-                                    iconSize: [30, 42],
-                                    iconAnchor: [15, 42]
-                                })}
+                                position={[Number(club.latitude!), Number(club.longitude!)]}
+                                icon={createCustomMarker(1)}
                             >
                                 <Popup>{club.club_name}</Popup>
                             </Marker>

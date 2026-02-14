@@ -70,7 +70,7 @@ const Header = forwardRef<HTMLDivElement>((props, ref) => {
   );
 
   return (
-    <AppBar ref={ref} position="static" sx={{ bgcolor: '#2E8B57' }}>
+    <AppBar ref={ref} position="static" sx={{ bgcolor: 'primary.main' }}>
       <Toolbar sx={{ justifyContent: 'space-between' }}>
         <Typography 
           variant="h6" 
@@ -106,7 +106,7 @@ const Header = forwardRef<HTMLDivElement>((props, ref) => {
               sx={{
                 '& .MuiDrawer-paper': { 
                   width: 240,
-                  bgcolor: '#2E8B57',
+                  bgcolor: 'primary.main',
                   color: 'white'
                 },
               }}

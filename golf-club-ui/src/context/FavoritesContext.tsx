@@ -3,6 +3,8 @@ import { favoritesApi } from '../api/favorites';
 import { useAuth } from './AuthContext';
 import { analytics } from '../utils/analytics';
 import type { FavoriteClub, Club } from '../types/Club';
+import { getErrorMessage } from '../utils/errorHandling';
+import { isValidCoordinate as validateCoordinate } from '../utils/mapUtils';
 
 interface FavoritesContextType {
   favorites: string[];
@@ -54,14 +56,7 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const lat = (club as Club).latitude ?? null;
           const lng = (club as Club).longitude ?? null;
           
-          if (
-            lat && 
-            lng && 
-            !isNaN(Number(lat)) && 
-            !isNaN(Number(lng)) &&
-            Math.abs(Number(lat)) <= 90 && 
-            Math.abs(Number(lng)) <= 180
-          ) {
+          if (validateCoordinate(lat, lng)) {
             return club;
           }
           
@@ -83,7 +78,8 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 } as FavoriteClub;
               }
             } catch (err) {
-              console.error(`Failed to get coordinates for zip code ${zipCode}:`, err);
+              // Silently fail - club will be shown without coordinates
+              console.debug(`Failed to get coordinates for zip code ${zipCode}:`, err);
             }
           }
           
@@ -93,8 +89,7 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       setFavoriteClubs(clubsWithCoordinates);
     } catch (err) {
-      console.error('Error fetching favorites:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch favorites');
+      setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -132,8 +127,7 @@ export const FavoritesProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Rollback optimistic update on error
       setFavorites(previousFavorites);
       setFavoriteClubs(previousFavoriteClubs);
-      console.error('Error toggling favorite:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update favorite');
+      setError(getErrorMessage(err));
       analytics.error('favorite_toggle_failed', { club_id: clubId });
     }
   };

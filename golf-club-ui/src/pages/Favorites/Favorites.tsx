@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import type { FavoriteClub } from '../../types/Club';
 import { useFavorites } from '../../hooks/useFavorites';
 import { Marker } from 'react-leaflet';
-import { divIcon } from 'leaflet';
+import { createCustomMarker, filterValidCoordinates, calculateMapCenter, calculateMapZoom } from '../../utils/mapUtils';
 
 interface GolfClubData {
   id: string;
@@ -30,9 +30,6 @@ interface FavoriteResponse {
   golfclub: GolfClubData;
 }
 
-const isValidCoordinate = (lat: number, lng: number): boolean =>
-  !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-
 const isValidGolfClub = (club: unknown): club is FavoriteClub => {
   if (!club || typeof club !== 'object') return false;
   const c = club as any;
@@ -42,53 +39,6 @@ const isValidGolfClub = (club: unknown): club is FavoriteClub => {
     (typeof c.latitude === 'number' || c.latitude === null) &&
     (typeof c.longitude === 'number' || c.longitude === null)
   );
-};
-
-const calculateMapBounds = (clubs: any[]) => {
-  const validClubs = clubs.filter(club => 
-    club.latitude && club.longitude && 
-    !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-    Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-  );
-  
-  if (validClubs.length === 0) return { center: [39.8283, -98.5795], zoom: 4 };
-  
-  if (validClubs.length === 1) {
-    return { 
-      center: [Number(validClubs[0].latitude), Number(validClubs[0].longitude)], 
-      zoom: 10 
-    };
-  }
-  
-  let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-  
-  validClubs.forEach(club => {
-    const lat = Number(club.latitude);
-    const lng = Number(club.longitude);
-    
-    minLat = Math.min(minLat, lat);
-    maxLat = Math.max(maxLat, lat);
-    minLng = Math.min(minLng, lng);
-    maxLng = Math.max(maxLng, lng);
-  });
-  
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLng = (minLng + maxLng) / 2;
-  
-  const latDiff = maxLat - minLat;
-  const lngDiff = maxLng - minLng;
-  const maxDiff = Math.max(latDiff, lngDiff);
-  
-  let zoom = 10;
-  if (maxDiff > 10) zoom = 3;
-  else if (maxDiff > 5) zoom = 4;
-  else if (maxDiff > 3) zoom = 5;
-  else if (maxDiff > 1) zoom = 6;
-  else if (maxDiff > 0.5) zoom = 7;
-  else if (maxDiff > 0.1) zoom = 8;
-  else if (maxDiff > 0.05) zoom = 9;
-  
-  return { center: [centerLat, centerLng], zoom };
 };
 
 const Favorites: React.FC = () => {
@@ -112,8 +62,9 @@ const Favorites: React.FC = () => {
 
   useEffect(() => {
     if (favoriteClubs.length > 0) {
-      const { center, zoom } = calculateMapBounds(getCurrentPageFavorites);
-      setMapCenter(center as [number, number]);
+      const center = calculateMapCenter(getCurrentPageFavorites as any[]);
+      const zoom = calculateMapZoom(getCurrentPageFavorites as any[]);
+      setMapCenter(center);
       setMapZoom(zoom);
     }
   }, [favoriteClubs, currentPage, getCurrentPageFavorites]);
@@ -151,33 +102,13 @@ const Favorites: React.FC = () => {
                 initialZoom={mapZoom}
                 key={`favorites-map-${JSON.stringify(mapCenter)}-${currentPage}-${mapZoom}`}
               >
-                {getCurrentPageFavorites
-                  .filter(club => 
-                    club.latitude && club.longitude && 
-                    !isNaN(club.latitude) && !isNaN(club.longitude) &&
-                    Math.abs(club.latitude) <= 90 && Math.abs(club.longitude) <= 180
-                  )
+                {filterValidCoordinates(getCurrentPageFavorites as any[])
                   .map((club, index) => {
                     return (
                       <Marker
                         key={club.golfclub_id || club.id}
-                        position={[Number(club.latitude), Number(club.longitude)]}
-                        icon={divIcon({
-                          className: 'custom-marker',
-                          html: `<div style="
-                            background-color: #1976d2;
-                            color: white;
-                            border-radius: 50%;
-                            width: 24px;
-                            height: 24px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-weight: bold;
-                            border: 2px solid white;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                          ">${index + 1}</div>`,
-                        })}
+                        position={[Number(club.latitude!), Number(club.longitude!)]}
+                        icon={createCustomMarker(index + 1)}
                         eventHandlers={{
                           click: () => handleClubClick(club.golfclub_id || club.id)
                         }}

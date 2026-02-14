@@ -9,7 +9,7 @@ const Footer: React.FC = () => {
         py: 3,
         px: 2,
         mt: 'auto',
-        backgroundColor: '#2E8B57',
+        backgroundColor: 'primary.main',
         color: 'white'
       }}
     >

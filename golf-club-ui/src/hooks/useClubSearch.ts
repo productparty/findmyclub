@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { clubsApi } from '../api/clubs';
 import { useGeocode } from './useGeocode';
 import type { Club } from '../types/Club';
+import { getErrorMessage } from '../utils/errorHandling';
 
 interface SearchFilters {
   zipCode: string;
@@ -132,8 +133,9 @@ export const useClubSearch = (options: UseClubSearchOptions = {}) => {
       setClubs(transformedClubs);
       onSuccess?.(transformedClubs);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to search clubs');
-      setError(error.message);
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      const error = err instanceof Error ? err : new Error(errorMessage);
       onError?.(error);
     } finally {
       setIsLoading(false);
@@ -159,8 +161,9 @@ export const useClubSearch = (options: UseClubSearchOptions = {}) => {
       setClubs(transformedClubs);
       onSuccess?.(transformedClubs);
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to get recommendations');
-      setError(error.message);
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      const error = err instanceof Error ? err : new Error(errorMessage);
       onError?.(error);
     } finally {
       setIsLoading(false);

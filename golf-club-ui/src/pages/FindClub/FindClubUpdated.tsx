@@ -17,8 +17,8 @@ import { Pagination } from '../../components/common/Pagination';
 import { LoadingSkeleton } from '../../components/common/LoadingSkeleton';
 import { analytics } from '../../utils/analytics';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { divIcon } from 'leaflet';
 import { Marker, Popup } from 'react-leaflet';
+import { createCustomMarker, calculateMapCenter, filterValidCoordinates } from '../../utils/mapUtils';
 
 interface Filters {
   zipCode: string;
@@ -202,15 +202,8 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   // Update map center when clubs change
   useEffect(() => {
     if (clubs.length > 0) {
-      const validCoords = clubs.filter(club => 
-        club.latitude && club.longitude && 
-        !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-        Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-      );
-      
-      if (validCoords.length > 0) {
-        setMapCenter([Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
-      }
+      const newCenter = calculateMapCenter(clubs);
+      setMapCenter(newCenter);
     }
   }, [clubs]);
 
@@ -220,12 +213,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       savedState = localStorage.getItem('findClubState');
     }
     if (savedState) {
-      const { savedFilters, savedClubs, savedPage, savedSortBy } = JSON.parse(savedState);
+      const { savedFilters, savedPage, savedSortBy } = JSON.parse(savedState);
       setFilters(savedFilters);
-      setClubs(savedClubs);
       setCurrentPage(savedPage);
       setSortBy(savedSortBy);
-      setFilteredClubs(savedClubs);
+      // Note: clubs state is managed by useClubSearch hook, cannot be restored directly
+      // User will need to re-search to see results
     } else {
       const searchParams = new URLSearchParams(location.search);
       const initialFilters = {
@@ -270,68 +263,15 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     }
   }, [filters, clubs, currentPage, sortBy]);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsSticky(window.scrollY > 100);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
+  // Ensure map center is valid when clubs change
   useEffect(() => {
     if (clubs.length > 0) {
-      const validCoords = clubs.filter(club => 
-        club.latitude && club.longitude && 
-        !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-        Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-      );
-      
-      if (validCoords.length > 0) {
-        setMapCenter([Number(validCoords[0].latitude), Number(validCoords[0].longitude)]);
-      }
-    }
-  }, [clubs, getPaginatedClubs]);
-
-  useEffect(() => {
-    if (mapCenter && mapCenter.length === 2) {
-      if (typeof mapCenter[0] !== 'number' || typeof mapCenter[1] !== 'number') {
-        setMapCenter([Number(mapCenter[0]), Number(mapCenter[1])]);
-      }
-    }
-    
-    if (clubs.length > 0) {
-      const anyValidClub = clubs.find(club => 
-        club.latitude && club.longitude && 
-        !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-        Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-      );
-      
-      if (anyValidClub) {
-        setMapCenter([Number(anyValidClub.latitude), Number(anyValidClub.longitude)]);
-      } else {
-        setMapCenter([42.3314, -83.0458]);
-      }
+      const newCenter = calculateMapCenter(clubs);
+      setMapCenter(newCenter);
     }
   }, [clubs]);
 
-  const createCustomMarker = (number: number) => {
-    return divIcon({
-      className: 'custom-marker',
-      html: `<div style="
-        background-color: #1976d2;
-        color: white;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        border: 2px solid white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      ">${number}</div>`,
-    });
-  };
 
   return (
     <Box
@@ -664,17 +604,12 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                         initialZoom={8}
                         key={`map-${filters.zipCode}-${filters.radius}-${currentPage}-${JSON.stringify(mapCenter)}-${clubs.length}`}
                       >
-                        {getPaginatedClubs
-                          .filter(club => 
-                            club.latitude && club.longitude && 
-                            !isNaN(Number(club.latitude)) && !isNaN(Number(club.longitude)) &&
-                            Math.abs(Number(club.latitude)) <= 90 && Math.abs(Number(club.longitude)) <= 180
-                          )
+                        {filterValidCoordinates(getPaginatedClubs)
                           .map((club, index) => {
                             return (
                               <Marker
                                 key={club.id}
-                                position={[Number(club.latitude), Number(club.longitude)]}
+                                position={[Number(club.latitude!), Number(club.longitude!)]}
                                 icon={createCustomMarker(index + 1)}
                                 eventHandlers={{
                                   click: () => handleMarkerClick(club.id)

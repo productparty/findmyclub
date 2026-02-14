@@ -56,27 +56,6 @@ app = FastAPI(
     description="API for managing golf clubs, courses, reviews, and more.",
 )
 
-# Get CORS origins from environment variable
-CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "https://golf-club-ui-lac.vercel.app,http://localhost:5173"
-).split(",")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "Access-Control-Allow-Origin",
-        "Access-Control-Allow-Methods",
-        "Access-Control-Allow-Headers",
-        "Access-Control-Allow-Credentials"
-    ],
-)
-
 # Create API router without prefix
 api_router = APIRouter()
 
@@ -85,6 +64,7 @@ cors_origins_str = os.getenv("CORS_ORIGINS", "https://golf-club-ui-lac.vercel.ap
 origins = [origin.strip() for origin in cors_origins_str.split(",")]
 logger.info(f"Configuring CORS with origins: {origins}")
 
+# Add CORS middleware (single instance)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -220,15 +200,6 @@ def get_lat_lng(zip_code: str):
     except Exception as e:
         logger.error(f"Unexpected geocoding error: {e}")
         raise HTTPException(status_code=500, detail="Internal geocoding error")
-
-@api_router.get("/geocode_zip/", tags=["Utilities"])
-def geocode_zip(zip_code: str):
-    try:
-        lat, lng = get_lat_lng(zip_code)
-        return {"lat": lat, "lng": lng}
-    except Exception as e:
-        logger.error(f"Error in geocode_zip: {e}")
-        raise HTTPException(status_code=400, detail="Failed to geocode ZIP code")
 
 @api_router.get("/find_clubs/", tags=["Clubs"], summary="Find Clubs", description="Find golf clubs based on various criteria.")
 async def find_clubs(
@@ -461,18 +432,36 @@ class UpdateGolferProfileResponse(BaseModel):
 # Add these near your other imports
 security = HTTPBearer()
 
-# Add this function to handle auth
+# Helper function to validate auth token and get user
+def get_user_from_token(token: str) -> Dict[str, Any]:
+    """Validate Supabase auth token and return user info"""
+    try:
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authentication token"
+            )
+        return {
+            "id": user_response.user.id,
+            "email": user_response.user.email,
+            "user": user_response.user
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Auth token validation failed: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication credentials"
+        )
+
+# Add this function to handle auth (for dependency injection)
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> Dict[str, Any]:
-    try:
-        user = supabase.auth.get_user(credentials.credentials)
-        return user.user
-    except Exception as e:
-                    raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
+    """FastAPI dependency for authenticated endpoints"""
+    return get_user_from_token(credentials.credentials)
 
 @api_router.get("/profiles/current", tags=["Profiles"])
 async def get_current_profile(request: Request):
@@ -492,25 +481,28 @@ async def get_current_profile(request: Request):
         token = auth_header.split(' ')[1]
         logger.info("Token extracted from header")
         
-        user = supabase.auth.get_user(token)
-        user_id = user.user.id
+        user_info = get_user_from_token(token)
+        user_id = user_info["id"]
+        user_email = user_info["email"]
         logger.info(f"User authenticated: {user_id}")
+        
         with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    cursor.execute("""
-                        SELECT * FROM profiles WHERE id = %s
-                    """, (user_id,))
-                    profile = cursor.fetchone()
-                    
-                    if not profile:
-                        logger.info(f"Creating new profile for user {user_id}")
-                        cursor.execute("""
-                            INSERT INTO profiles (id, email)
-                            VALUES (%s, %s)
-                            RETURNING *
-                        """, (user_id, user.user.email))
-                conn.commit()
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT * FROM profiles WHERE id = %s
+                """, (user_id,))
                 profile = cursor.fetchone()
+                
+                if not profile:
+                    logger.info(f"Creating new profile for user {user_id}")
+                    cursor.execute("""
+                        INSERT INTO profiles (id, email)
+                        VALUES (%s, %s)
+                        RETURNING *
+                    """, (user_id, user_email))
+                    conn.commit()
+                    profile = cursor.fetchone()
+                
                 logger.info("Profile retrieved successfully")
                 return profile
         
@@ -537,8 +529,8 @@ async def get_recommendations(
             raise HTTPException(status_code=401, detail="Missing authentication token")
         
         token = auth_header.split(' ')[1]
-        user = supabase.auth.get_user(token)
-        user_id = user.user.id
+        user_info = get_user_from_token(token)
+        user_id = user_info["id"]
 
         # Get user profile preferences
         with get_db_connection() as conn:
@@ -617,8 +609,8 @@ async def recommend_courses(request: Request, data: dict):
             raise HTTPException(status_code=401, detail="Missing authentication token")
         
         token = auth_header.split(' ')[1]
-        user = supabase.auth.get_user(token)
-        user_id = user.user.id
+        user_info = get_user_from_token(token)
+        user_id = user_info["id"]
 
         # Get user preferences and courses in radius
         with get_db_connection() as conn:
@@ -676,8 +668,8 @@ async def debug_profile(request: Request):
             raise HTTPException(status_code=401, detail="Missing authentication token")
         
         token = auth_header.split(' ')[1]
-        user = supabase.auth.get_user(token)
-        user_id = user.user.id
+        user_info = get_user_from_token(token)
+        user_id = user_info["id"]
 
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -763,8 +755,8 @@ async def update_current_profile(request: Request):
             raise HTTPException(status_code=401, detail="Missing authentication token")
         
         token = auth_header.split(' ')[1]
-        user = supabase.auth.get_user(token)
-        user_id = user.user.id
+        user_info = get_user_from_token(token)
+        user_id = user_info["id"]
 
         # Get request data
         data = await request.json()
@@ -927,20 +919,15 @@ async def test_auth(request: Request):
         token = auth_header.split(' ')[1]
         logger.info(f"Token received: {token[:10]}...")
         
-        user = supabase.auth.get_user(token)
+        user_info = get_user_from_token(token)
         return {
             "status": "success", 
-            "user_id": user.id,
-                "email": user.email
-            }
-    except Exception as e:
-            logger.error(f"Token validation failed: {str(e)}")
-            return {"status": "error", "detail": str(e)}
-            
-    except Exception as e:
-        logger.error(f"Auth test error: {str(e)}")
-        return {"status": "error", "detail": str(e)}
-            
+            "user_id": user_info["id"],
+            "email": user_info["email"]
+        }
+    except HTTPException as e:
+        logger.error(f"Token validation failed: {str(e)}")
+        return {"status": "error", "detail": e.detail}
     except Exception as e:
         logger.error(f"Auth test error: {str(e)}")
         return {"status": "error", "detail": str(e)}
