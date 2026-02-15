@@ -1,7 +1,7 @@
 import './FindClub.css';
 import React, { useState, useEffect, useMemo, forwardRef } from 'react';
-import { 
-  Grid, TextField, Button, FormControl, InputLabel, Select, MenuItem, 
+import {
+  Grid, TextField, Button, FormControl, InputLabel, Select, MenuItem,
   Box, Alert, CircularProgress, SelectChangeEvent, Typography, Card,
   FormControlLabel, Switch, Divider, CardContent, useTheme, useMediaQuery, IconButton, SwipeableDrawer, Paper
 } from '@mui/material';
@@ -77,7 +77,8 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  
+  const [zipError, setZipError] = useState('');
+
   // Use new hooks
   const { clubs, isLoading, error, searchClubs, clearResults } = useClubSearch({
     token: session?.access_token,
@@ -86,6 +87,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
 
   const handleTextChange = (name: keyof Filters) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setFilters(prev => ({ ...prev, [name]: event.target.value }));
+    if (name === 'zipCode') setZipError('');
   };
 
   const handleSelectChange = (name: keyof Filters) => (event: SelectChangeEvent) => {
@@ -129,8 +131,15 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    // Validate ZIP code
+    if (filters.zipCode && !/^\d{5}$/.test(filters.zipCode)) {
+      setZipError('Please enter a valid 5-digit ZIP code');
+      return;
+    }
+
     await searchClubs(filters);
-    
+
     // Track search analytics
     analytics.clubSearch({
       zip_code: filters.zipCode,
@@ -138,7 +147,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       price_range: filters.preferred_price_range || '',
       difficulty: filters.preferred_difficulty || '',
     });
-    
+
     // Update URL params
     const urlParams: Record<string, string> = {
       zipCode: filters.zipCode,
@@ -152,7 +161,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
 
   const getCurrentPageClubs = useMemo(() => {
     let filteredClubs = [...clubs];
-    
+
     if (showOnlyFavorites) {
       filteredClubs = filteredClubs.filter(club => isFavorite(club.id));
     }
@@ -180,7 +189,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     const endIndex = startIndex + ITEMS_PER_PAGE;
     return getCurrentPageClubs.slice(startIndex, endIndex);
   }, [currentPage, getCurrentPageClubs]);
-  
+
   const totalPages = Math.ceil(getCurrentPageClubs.length / ITEMS_PER_PAGE);
 
   const handlePageChange = (newPage: number) => {
@@ -242,7 +251,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
       };
       setFilters(initialFilters);
       setCurrentPage(Number(searchParams.get('page')) || 1);
-      
+
       if (initialFilters.zipCode) {
         handleSearch();
       }
@@ -287,9 +296,9 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
     >
       <PageLayout title="Find Club" titleProps={{ sx: { textAlign: 'center' } }}>
         <Box sx={{ className: `find-club ${className || ''}` }}>
-          <Typography 
-            variant="subtitle1" 
-            color="text.secondary" 
+          <Typography
+            variant="subtitle1"
+            color="text.secondary"
             sx={{ mb: 4, textAlign: 'center' }}
           >
             Search and filter golf clubs based on your preferences and location.
@@ -297,16 +306,17 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
 
           <Grid container spacing={2}>
             <Grid item xs={12} md={3}>
-              <Paper sx={{ 
-                p: { xs: 2, sm: 3 }, 
+              <Paper sx={{
+                p: { xs: 2, sm: 3 },
                 mb: { xs: 2, md: 0 },
                 display: 'block'
               }}>
                 <Typography variant="h6" gutterBottom>
                   Find Club Search and Filter
                 </Typography>
-                
+
                 <Box component="form" onSubmit={handleSearch} sx={{ mt: 2 }}>
+
                   <TextField
                     label="Zip Code"
                     fullWidth
@@ -314,8 +324,10 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                     value={filters.zipCode}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleTextChange('zipCode')(e)}
                     sx={{ mb: 2 }}
+                    error={!!zipError}
+                    helperText={zipError}
                   />
-                  
+
                   <FormControl fullWidth margin="normal" sx={{ mb: 2 }}>
                     <InputLabel id="radius-label">Search Radius (miles)</InputLabel>
                     <Select
@@ -330,7 +342,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                       <MenuItem value="100">100 miles</MenuItem>
                     </Select>
                   </FormControl>
-                  
+
                   <FormControl fullWidth margin="normal" sx={{ mb: 2 }}>
                     <InputLabel id="price-range-label">Price Range</InputLabel>
                     <Select
@@ -345,7 +357,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                       <MenuItem value="$$$">$$$ (Premium)</MenuItem>
                     </Select>
                   </FormControl>
-                  
+
                   <FormControl fullWidth margin="normal" sx={{ mb: 2 }}>
                     <InputLabel id="difficulty-label">Difficulty</InputLabel>
                     <Select
@@ -360,7 +372,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                       <MenuItem value="Advanced">Advanced</MenuItem>
                     </Select>
                   </FormControl>
-                  
+
                   <FormControl fullWidth margin="normal" sx={{ mb: 2 }}>
                     <InputLabel id="holes-label">Number of Holes</InputLabel>
                     <Select
@@ -376,7 +388,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                       <MenuItem value="36">36 Holes</MenuItem>
                     </Select>
                   </FormControl>
-                  
+
                   <FormControl fullWidth margin="normal" sx={{ mb: 2 }}>
                     <InputLabel id="membership-label">Membership Type</InputLabel>
                     <Select
@@ -391,9 +403,9 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                       <MenuItem value="Semi-Private">Semi-Private</MenuItem>
                     </Select>
                   </FormControl>
-                  
+
                   <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Amenities</Typography>
-                  
+
                   <Grid container spacing={1}>
                     <Grid item xs={6}>
                       <FormControlLabel
@@ -517,23 +529,23 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                       />
                     </Grid>
                   </Grid>
-                  
-                  <Box sx={{ 
-                    mt: 3, 
-                    display: 'flex', 
+
+                  <Box sx={{
+                    mt: 3,
+                    display: 'flex',
                     flexDirection: { xs: 'column', sm: 'row' },
                     gap: 1
                   }}>
-                    <Button 
-                      type="submit" 
-                      variant="contained" 
+                    <Button
+                      type="submit"
+                      variant="contained"
                       fullWidth
                       disabled={isLoading}
                     >
                       {isLoading ? <CircularProgress size={24} /> : 'Search'}
                     </Button>
-                    <Button 
-                      variant="outlined" 
+                    <Button
+                      variant="outlined"
                       fullWidth
                       onClick={handleClearSearch}
                     >
@@ -543,10 +555,10 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                 </Box>
               </Paper>
             </Grid>
-            
+
             <Grid item xs={12} md={9}>
-              <Box sx={{ 
-                display: 'flex', 
+              <Box sx={{
+                display: 'flex',
                 flexDirection: { xs: 'column', md: 'row' },
                 justifyContent: 'space-between',
                 gap: 2,
@@ -565,7 +577,7 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                     </Button>
                   )}
                 </Box>
-                <FormControl sx={{ 
+                <FormControl sx={{
                   minWidth: { xs: '100%', sm: 200 }
                 }}>
                   <InputLabel>Sort By</InputLabel>
@@ -633,14 +645,14 @@ const FindClubUpdated = forwardRef<HTMLDivElement, Props>(({ className }, ref) =
                           boxShadow: 1,
                           p: { xs: 1, md: 2 }
                         }}>
-                          <ClubCard 
+                          <ClubCard
                             club={club}
                             isFavorite={isFavorite(club.id)}
                             onToggleFavorite={toggleFavorite}
                             showToggle={true}
                             index={index}
                             showScore={true}
-                            sx={{ 
+                            sx={{
                               cursor: 'pointer',
                               '&:hover': { boxShadow: 3 }
                             }}

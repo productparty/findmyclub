@@ -20,6 +20,13 @@ import asyncio
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from server.limiter import limiter
+from server.context import set_user_id, get_user_id
+import re
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,24 +44,28 @@ if os.path.exists(env_path):
 else:
     logger.error(f"Environment file not found at {env_path}")
 
-# Remove any frontend-specific env var logging
-logger.info("=== Backend Environment Variables ===")
-logger.info(f"DB_HOST: {os.getenv('DB_HOST')}")
-logger.info(f"DB_PORT: {os.getenv('DB_PORT')}")
-logger.info(f"AZURE_MAPS_API_KEY: {os.getenv('AZURE_MAPS_API_KEY')}")
-
-# After loading environment variables
-logger.info("================================")
-
-# Define FRONTEND_URL
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-
 # Initialize FastAPI app first
 app = FastAPI(
-    title="Golf Course API",
+    title="Find My Club API",
+    description="API for Golf Course Recommendation Engine",
     version="1.0.0",
-    description="API for managing golf clubs, courses, reviews, and more.",
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
+
+# Add SlowAPI middleware
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+def validate_zip_code(zip_code: str):
+    """Validate that ZIP code is a 5-digit US ZIP code"""
+    if not re.match(r'^\d{5}$', zip_code):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid ZIP code format. Must be 5 digits."
+        )
+    return zip_code
 
 # Create API router without prefix
 api_router = APIRouter()
@@ -110,21 +121,7 @@ async def log_requests(request: Request, call_next):
     logger.info(f"Response: {response.status_code}")
     return response
 
-# Add better error handling for timeouts
-@app.middleware("http")
-async def timeout_middleware(request: Request, call_next):
-    try:
-        response = await call_next(request)
-        return response
-    except Exception as e:
-        logger.error(f"Request failed: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": "Internal server error",
-                "detail": str(e)
-            }
-        )
+
 
 # Exception Handler
 @app.exception_handler(Exception)
@@ -136,7 +133,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 @api_router.get("/health", tags=["Health"])
-async def health_check():
+@limiter.limit("5/minute")
+async def health_check(request: Request):
     return {"status": "healthy", "supabase": bool(supabase)}
 
 @api_router.get("/test-connection", tags=["Health"])
@@ -149,7 +147,10 @@ async def test_connection():
 
 # Geocode ZIP Code
 @api_router.get("/geocode_zip/", tags=["Utilities"])
-def get_lat_lng(zip_code: str):
+@limiter.limit("10/minute")
+def get_lat_lng(request: Request, zip_code: str):
+    validate_zip_code(zip_code)
+
     try:
         # Use Azure Maps Search API with specific parameters for ZIP codes
         url = "https://atlas.microsoft.com/search/address/json"
@@ -202,7 +203,9 @@ def get_lat_lng(zip_code: str):
         raise HTTPException(status_code=500, detail="Internal geocoding error")
 
 @api_router.get("/find_clubs/", tags=["Clubs"], summary="Find Clubs", description="Find golf clubs based on various criteria.")
+@limiter.limit("20/minute")
 async def find_clubs(
+    request: Request,
     zip_code: str,
     radius: int = 10,
     limit: int = 25,
@@ -224,8 +227,9 @@ async def find_clubs(
     golf_lessons: bool | None = None
 ):
     try:
+        validate_zip_code(zip_code)
         # Get coordinates from ZIP code
-        lat, lng = get_lat_lng(zip_code)
+        lat, lng = get_lat_lng(request, zip_code)
         params = [lng, lat, lng, lat, radius]
         conditions = []
 
@@ -344,7 +348,7 @@ def update_golf_course(course_id: str, course: UpdateGolfCourseRequest):
             geom = ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326)
         WHERE global_id = %(course_id)s
         """
-        course_dict = course.dict()
+        course_dict = course.model_dump()
         course_dict["course_id"] = course_id
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
@@ -429,6 +433,22 @@ class UpdateGolferProfileResponse(BaseModel):
     club_id: str | None  # Allow club_id to be None
     preferred_tees: str | None  # Allow preferred_tees to be None
 
+class ClubSubmission(BaseModel):
+    name: str
+    address: str
+    city: str
+    state: str
+    zip_code: str
+    website: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    notes: str | None = None
+
+class ClubReview(BaseModel):
+    rating: int
+    comment: str | None = None
+    club_id: str
+
 # Add these near your other imports
 security = HTTPBearer()
 
@@ -447,6 +467,7 @@ def get_user_from_token(token: str) -> Dict[str, Any]:
             "email": user_response.user.email,
             "user": user_response.user
         }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -455,6 +476,18 @@ def get_user_from_token(token: str) -> Dict[str, Any]:
             status_code=401,
             detail="Invalid authentication credentials"
         )
+
+# Helper to extract token and set context
+def authenticate_request(request: Request) -> str:
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Missing or invalid authentication token")
+    
+    token = auth_header.split(' ')[1]
+    user_info = get_user_from_token(token)
+    user_id = user_info["id"]
+    set_user_id(user_id)
+    return user_id
 
 # Add this function to handle auth (for dependency injection)
 async def get_current_user(
@@ -516,6 +549,7 @@ async def get_current_profile(request: Request):
         )
 
 @api_router.get("/get_recommendations/", tags=["Recommendations"])
+@limiter.limit("10/minute")
 async def get_recommendations(
     request: Request,
     zip_code: str,
@@ -523,6 +557,7 @@ async def get_recommendations(
     limit: int = 25
 ):
     try:
+        validate_zip_code(zip_code)
         # Get user profile from token
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
@@ -542,7 +577,8 @@ async def get_recommendations(
                     raise HTTPException(status_code=404, detail="Profile not found")
 
                 # Get coordinates from ZIP code
-                lat, lng = get_lat_lng(zip_code)
+                # Note: Internal call, request object passed down
+                lat, lng = get_lat_lng(request, zip_code)
 
                 # Get clubs within radius using same method as find_clubs
                 cursor.execute("""
@@ -583,11 +619,11 @@ async def get_recommendations(
                 
                 courses = cursor.fetchall()
 
-                # Calculate recommendation scores
+                # Calculate scores using updated recommendation engine
                 scored_courses = []
                 for course in courses:
-                    score = calculate_recommendation_score(course, profile)
-                    scored_courses.append({**course, 'score': score})
+                    score, explanation = calculate_recommendation_score(course, profile)
+                    scored_courses.append({**course, 'score': score, 'recommendation_reason': explanation})
 
                 # Sort by score
                 scored_courses.sort(key=lambda x: x['score'], reverse=True)
@@ -602,52 +638,71 @@ async def get_recommendations(
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/recommend-courses", tags=["Courses"])
+@limiter.limit("10/minute")
 async def recommend_courses(request: Request, data: dict):
     try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            raise HTTPException(status_code=401, detail="Missing authentication token")
-        
-        token = auth_header.split(' ')[1]
-        user_info = get_user_from_token(token)
-        user_id = user_info["id"]
+        if 'zip_code' in data:
+            validate_zip_code(data['zip_code'])
+            
+        # Authenticate and set context
+        user_id = authenticate_request(request)
 
-        # Get user preferences and courses in radius
+        # Get user profile
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                # Get user profile
                 cursor.execute("SELECT * FROM profiles WHERE id = %s", (user_id,))
                 profile = cursor.fetchone()
                 
                 if not profile:
                     raise HTTPException(status_code=404, detail="Profile not found")
 
-                # Get courses within radius
+                # Get coordinates from ZIP code (using shared utility)
+                lat, lng = get_lat_lng(request, data['zip_code'])
+
+                # Query golfclub table (Standardized)
                 cursor.execute("""
-                    SELECT c.*, 
+                    SELECT 
+                        gc.global_id as id,
+                        gc.club_name,
+                        gc.address,
+                        gc.city,
+                        gc.state,
+                        gc.zip_code,
+                        gc.price_tier,
+                        gc.difficulty,
+                        gc.number_of_holes,
+                        gc.club_membership,
+                        gc.driving_range,
+                        gc.putting_green,
+                        gc.chipping_green,
+                        gc.practice_bunker,
+                        gc.restaurant,
+                        gc.lodging_on_site,
+                        gc.motor_cart,
+                        gc.pull_cart,
+                        gc.golf_clubs_rental,
+                        gc.club_fitting,
+                        gc.golf_lessons,
                         ST_Distance(
-                            c.location::geography,
-                            (SELECT ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography 
-                            FROM zip_codes WHERE zip_code = %s)
+                            gc.geom::geography,
+                            ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
                         ) / 1609.34 as distance_miles
-                    FROM courses c
+                    FROM golfclub gc
                     WHERE ST_DWithin(
-                        c.location::geography,
-                        (SELECT ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography 
-                        FROM zip_codes WHERE zip_code = %s),
+                        gc.geom::geography,
+                        ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
                         %s * 1609.34
                     )
-                """, (data['zip_code'], data['zip_code'], data['radius']))
+                """, (lng, lat, lng, lat, data.get('radius', 25)))
                 
                 courses = cursor.fetchall()
                 
-                # Calculate scores using updated recommendation engine
+                # Calculate scores
                 scored_courses = []
                 for course in courses:
-                    score = calculate_recommendation_score(course, profile)
-                    scored_courses.append({**course, 'score': score})
+                    score, explanation = calculate_recommendation_score(course, profile)
+                    scored_courses.append({**course, 'score': score, 'recommendation_reason': explanation})
 
-                # Sort by score
                 scored_courses.sort(key=lambda x: x['score'], reverse=True)
 
                 return {
@@ -659,92 +714,188 @@ async def recommend_courses(request: Request, data: dict):
         logger.error(f"Error in recommend_courses: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/debug/profile", tags=["Debug"])
-async def debug_profile(request: Request):
-    """Debug endpoint to check profile data"""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            raise HTTPException(status_code=401, detail="Missing authentication token")
-        
-        token = auth_header.split(' ')[1]
-        user_info = get_user_from_token(token)
-        user_id = user_info["id"]
 
+@api_router.post("/clubs/submit", tags=["Clubs"])
+async def submit_club(submission: ClubSubmission):
+    """Submit a new club for approval"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # Create table if not exists
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS club_submissions (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        name TEXT NOT NULL,
+                        address TEXT,
+                        city TEXT,
+                        state TEXT,
+                        zip_code TEXT,
+                        website TEXT,
+                        phone TEXT,
+                        email TEXT,
+                        notes TEXT,
+                        status TEXT DEFAULT 'pending',
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                
+                cursor.execute("""
+                    INSERT INTO club_submissions 
+                    (name, address, city, state, zip_code, website, phone, email, notes)
+                    VALUES (%(name)s, %(address)s, %(city)s, %(state)s, %(zip_code)s, %(website)s, %(phone)s, %(email)s, %(notes)s)
+                """, submission.model_dump())
+                conn.commit()
+        return {"message": "Club submitted successfully"}
+    except Exception as e:
+        logger.error(f"Error submitting club: {e}")
+        raise HTTPException(status_code=500, detail="Failed to submit club")
+
+@api_router.post("/clubs/{club_id}/reviews", tags=["Clubs"])
+async def add_review(club_id: str, review: ClubReview, request: Request):
+    """Add a review for a club"""
+    user_id = authenticate_request(request)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                # Create reviews table if not exists
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS reviews (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        club_id TEXT NOT NULL,
+                        user_id UUID NOT NULL,
+                        rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+                        comment TEXT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                
+                cursor.execute("""
+                    INSERT INTO reviews (club_id, user_id, rating, comment)
+                    VALUES (%s, %s, %s, %s)
+                """, (club_id, user_id, review.rating, review.comment))
+                conn.commit()
+        return {"message": "Review added successfully"}
+    except Exception as e:
+        logger.error(f"Error adding review: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add review")
+
+@api_router.get("/clubs/{club_id}/reviews", tags=["Clubs"])
+async def get_reviews(club_id: str):
+    """Get reviews for a club"""
+    try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("SELECT * FROM profiles WHERE id = %s", (user_id,))
-                profile = cursor.fetchone()
-                
-                return {
-                    "profile": profile,
-                    "timestamp": datetime.now().isoformat()
-                }
+                # Check if table exists first (graceful degradation)
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'reviews'
+                    );
+                """)
+                if not cursor.fetchone()['exists']:
+                    return []
 
+                cursor.execute("""
+                    SELECT r.*, p.first_name, p.last_name 
+                    FROM reviews r
+                    LEFT JOIN profiles p ON r.user_id = p.id
+                    WHERE r.club_id = %s
+                    ORDER BY r.created_at DESC
+                """, (club_id,))
+                return cursor.fetchall()
     except Exception as e:
-        logger.error(f"Profile debug error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching reviews: {e}")
+        return []
 
-@api_router.post("/debug/token", tags=["Debug"])
-async def get_debug_token(request: Request):
-    """Single endpoint for token generation"""
-    try:
-        data = await request.json()
-        email = data.get('email')
-        password = data.get('password')
-        
-        if not email or not password:
-            raise HTTPException(
-                status_code=400, 
-                detail="Email and password required"
-            )
-            
-        logger.info(f"Attempting authentication for {email}")
-        
+# Only enable debug routes in development
+if os.getenv("ENVIRONMENT") == "development":
+    @api_router.get("/debug/profile", tags=["Debug"])
+    async def debug_profile(request: Request):
+        """Debug endpoint to check profile data"""
         try:
-            res = supabase.auth.sign_in_with_password({
-                "email": email,
-                "password": password
-            })
+            auth_header = request.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
+                raise HTTPException(status_code=401, detail="Missing authentication token")
             
-            if not res.session:
+            token = auth_header.split(' ')[1]
+            user_info = get_user_from_token(token)
+            user_id = user_info["id"]
+
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute("SELECT * FROM profiles WHERE id = %s", (user_id,))
+                    profile = cursor.fetchone()
+                    
+                    return {
+                        "profile": profile,
+                        "timestamp": datetime.now().isoformat()
+                    }
+
+        except Exception as e:
+            logger.error(f"Profile debug error: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @api_router.post("/debug/token", tags=["Debug"])
+    async def get_debug_token(request: Request):
+        """Single endpoint for token generation"""
+        try:
+            data = await request.json()
+            email = data.get('email')
+            password = data.get('password')
+            
+            if not email or not password:
                 raise HTTPException(
-                    status_code=401, 
-                    detail="Authentication failed"
+                    status_code=400, 
+                    detail="Email and password required"
                 )
                 
-            return {
-                "access_token": res.session.access_token,
-                "expires_at": res.session.expires_at
-            }
+            logger.info(f"Attempting authentication for {email}")
             
-        except Exception as auth_error:
-            logger.error(f"Authentication error: {str(auth_error)}")
+            try:
+                res = supabase.auth.sign_in_with_password({
+                    "email": email,
+                    "password": password
+                })
+                
+                if not res.session:
+                    raise HTTPException(
+                        status_code=401, 
+                        detail="Authentication failed"
+                    )
+                    
+                return {
+                    "access_token": res.session.access_token,
+                    "expires_at": res.session.expires_at
+                }
+                
+            except Exception as auth_error:
+                logger.error(f"Authentication error: {str(auth_error)}")
+                raise HTTPException(
+                    status_code=401, 
+                    detail=f"Authentication failed: {str(auth_error)}"
+                )
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Token generation error: {str(e)}")
             raise HTTPException(
-                status_code=401, 
-                detail=f"Authentication failed: {str(auth_error)}"
+                status_code=500,
+                detail=f"Server error: {str(e)}"
             )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Token generation error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Server error: {str(e)}"
-        )
 
-@api_router.get("/debug/routes", tags=["Debug"])
-async def list_routes():
-    """List all registered routes"""
-    routes = []
-    for route in app.routes:
-        routes.append({
-            "path": route.path,
-            "name": route.name,
-            "methods": route.methods
-        })
-    return {"routes": routes}
+    @api_router.get("/debug/routes", tags=["Debug"])
+    async def list_routes():
+        """List all registered routes"""
+        routes = []
+        for route in app.routes:
+            routes.append({
+                "path": route.path,
+                "name": route.name,
+                "methods": route.methods
+            })
+        return {"routes": routes}
+
 
 @api_router.put("/profiles/current", tags=["Profiles"])
 async def update_current_profile(request: Request):

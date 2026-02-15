@@ -5,33 +5,37 @@ import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RouteErrorBoundary } from './components/common/RouteErrorBoundary';
-import { Box, Typography, CircularProgress } from '@mui/material';
-import { RouterProvider, createBrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { Box, CircularProgress } from '@mui/material';
+import { RouterProvider, createBrowserRouter, Navigate } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
 import { lazy, Suspense } from 'react';
-import { config } from './config';
 import { Analytics } from '@vercel/analytics/react';
 import Layout from './components/Layout';
 import ErrorPage from './pages/ErrorPage/ErrorPage';
 import { FavoritesProvider } from './context/FavoritesContext';
 
 // Import pages
-import Dashboard from './pages/Home/Dashboard';
-import FindClubUpdated from './pages/FindClub/FindClubUpdated';
-import Favorites from './pages/Favorites/Favorites';
-import GolferProfileUpdated from './pages/GolferProfile/GolferProfileUpdated';
-import Login from './pages/login/Login';
-import SignUp from './pages/CreateAccount/CreateAccount';
-import CreateAccountSubmitted from './pages/CreateAccount/CreateAccountSubmitted';
-import AuthCallback from './pages/Auth/Callback';
-import RecommendClubUpdated from './pages/RecommendClub/RecommendClubUpdated';
-import ClubDetail from './pages/ClubDetail/ClubDetail';
-import NotFound from './pages/NotFound/NotFound';
-import LandingPage from './pages/Home/LandingPage';
-import PasswordResetRequest from './pages/PasswordReset/PasswordResetRequest';
-import PasswordResetConfirm from './pages/PasswordReset/PasswordResetConfirm';
+import { HelmetProvider } from 'react-helmet-async';
+
+// Import pages lazy
+const Dashboard = lazy(() => import('./pages/Home/Dashboard'));
+const FindClubUpdated = lazy(() => import('./pages/FindClub/FindClubUpdated'));
+const Favorites = lazy(() => import('./pages/Favorites/Favorites'));
+const GolferProfileUpdated = lazy(() => import('./pages/GolferProfile/GolferProfileUpdated'));
+const Login = lazy(() => import('./pages/login/Login'));
+const SignUp = lazy(() => import('./pages/CreateAccount/CreateAccount'));
+const CreateAccountSubmitted = lazy(() => import('./pages/CreateAccount/CreateAccountSubmitted'));
+const AuthCallback = lazy(() => import('./pages/Auth/Callback'));
+const RecommendClubUpdated = lazy(() => import('./pages/RecommendClub/RecommendClubUpdated'));
+const ClubDetail = lazy(() => import('./pages/ClubDetail/ClubDetail'));
+const NotFound = lazy(() => import('./pages/NotFound/NotFound'));
+const LandingPage = lazy(() => import('./pages/Home/LandingPage'));
+const PasswordResetRequest = lazy(() => import('./pages/PasswordReset/PasswordResetRequest'));
+const PasswordResetConfirm = lazy(() => import('./pages/PasswordReset/PasswordResetConfirm'));
+// ProtectedRoute is a component, not a page, so keep it eager or lazy? usually eager is fine for components
+// But imports were: import { ProtectedRoute } from ...
 import { ProtectedRoute } from './components/ProtectedRoute';
-import CreateAccountSuccessful from './pages/CreateAccount/CreateAccountSuccessful';
+const CreateAccountSuccessful = lazy(() => import('./pages/CreateAccount/CreateAccountSuccessful'));
 
 // Environment configuration validated at build time
 
@@ -52,7 +56,7 @@ const queryClient = new QueryClient({
   },
 });
 
-const theme = createTheme();
+import { default as theme } from './theme';
 
 // Define the router with proper layout structure
 const router = createBrowserRouter([
@@ -87,16 +91,18 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <Suspense fallback={<LoadingFallback />}>
         <QueryClientProvider client={queryClient}>
-          <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <ThemeProvider theme={theme}>
-              <AuthProvider>
-                <FavoritesProvider>
-                  <RouterProvider router={router} />
-                  <Analytics />
-                </FavoritesProvider>
-              </AuthProvider>
-            </ThemeProvider>
-          </LocalizationProvider>
+          <HelmetProvider>
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <ThemeProvider theme={theme}>
+                <AuthProvider>
+                  <FavoritesProvider>
+                    <RouterProvider router={router} />
+                    <Analytics />
+                  </FavoritesProvider>
+                </AuthProvider>
+              </ThemeProvider>
+            </LocalizationProvider>
+          </HelmetProvider>
         </QueryClientProvider>
       </Suspense>
     </ErrorBoundary>

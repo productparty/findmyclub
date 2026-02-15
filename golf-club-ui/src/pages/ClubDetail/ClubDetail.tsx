@@ -10,6 +10,15 @@ import { analytics } from '../../utils/analytics';
 import type { Club } from '../../types/Club';
 import { Marker, Popup } from 'react-leaflet';
 import { createCustomMarker, isValidCoordinate } from '../../utils/mapUtils';
+import { useWeather } from '../../hooks/useWeather';
+import { getWeatherInfo } from '../../utils/weather';
+import ReviewSection from '../../components/ReviewSection';
+import WbSunnyIcon from '@mui/icons-material/WbSunny';
+import CloudIcon from '@mui/icons-material/Cloud';
+import OpacityIcon from '@mui/icons-material/Opacity';
+import AcUnitIcon from '@mui/icons-material/AcUnit';
+import ThunderstormIcon from '@mui/icons-material/Thunderstorm';
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 
 export const ClubDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -20,10 +29,32 @@ export const ClubDetail: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0]);
 
+    // Fetch weather data
+    const { weather, isLoading: weatherLoading } = useWeather(
+        club?.latitude ? Number(club.latitude) : null,
+        club?.longitude ? Number(club.longitude) : null
+    );
+
+    const getWeatherIconComponent = (iconName: string) => {
+        switch (iconName) {
+            case 'clear_day': return <WbSunnyIcon />;
+            case 'partly_cloudy_day': return <CloudIcon />; // Approximation
+            case 'cloudy': return <CloudIcon />;
+            case 'foggy': return <CloudIcon sx={{ opacity: 0.5 }} />;
+            case 'rainy_light':
+            case 'rainy':
+            case 'rainy_heavy': return <OpacityIcon />;
+            case 'weather_snowy':
+            case 'weather_snowy_heavy': return <AcUnitIcon />;
+            case 'thunderstorm': return <ThunderstormIcon />;
+            default: return <QuestionMarkIcon />;
+        }
+    };
+
     useEffect(() => {
         const fetchClubDetails = async () => {
             if (!id) return;
-            
+
             try {
                 setLoading(true);
                 setError(null);
@@ -43,13 +74,13 @@ export const ClubDetail: React.FC = () => {
                 }
 
                 const data = await response.json();
-                
+
                 // If we don't have coordinates, try to get them from zip code
                 if ((!data.latitude || !data.longitude) && data.zip_code) {
                     try {
                         const zipResponse = await fetch(`https://api.zippopotam.us/us/${data.zip_code}`);
                         const zipData = await zipResponse.json();
-                        
+
                         if (zipData.places && zipData.places.length > 0) {
                             data.latitude = Number(zipData.places[0].latitude);
                             data.longitude = Number(zipData.places[0].longitude);
@@ -58,14 +89,14 @@ export const ClubDetail: React.FC = () => {
                         console.error(`Failed to get coordinates for zip code ${data.zip_code}:`, error);
                     }
                 }
-                
+
                 setClub(data);
-                
+
                 // Track club view
                 if (id) {
                     analytics.clubViewed(id);
                 }
-                
+
                 // Set map center immediately if we have valid coordinates
                 if (isValidCoordinate(data.latitude, data.longitude)) {
                     setMapCenter([Number(data.latitude), Number(data.longitude)]);
@@ -96,8 +127,8 @@ export const ClubDetail: React.FC = () => {
         return (
             <PageLayout title="Error">
                 <Box sx={{ p: 3 }}>
-                    <Button 
-                        startIcon={<ArrowBackIcon />} 
+                    <Button
+                        startIcon={<ArrowBackIcon />}
                         onClick={() => navigate(-1)}
                         sx={{ mb: 3 }}
                     >
@@ -114,8 +145,8 @@ export const ClubDetail: React.FC = () => {
     return (
         <PageLayout title={club.club_name}>
             <Box sx={{ p: 3 }}>
-                <Button 
-                    startIcon={<ArrowBackIcon />} 
+                <Button
+                    startIcon={<ArrowBackIcon />}
                     onClick={() => navigate(-1)}
                     sx={{ mb: 3 }}
                 >
@@ -129,7 +160,7 @@ export const ClubDetail: React.FC = () => {
                         clubs={isValidCoordinate(club.latitude, club.longitude) ? [club] : []}
                         center={mapCenter}
                         radius={0}
-                        onMarkerClick={() => {}}
+                        onMarkerClick={() => { }}
                         initialZoom={15}
                         key={`club-detail-map-${club?.id}-${mapCenter[0]}-${mapCenter[1]}`}
                     >
@@ -173,8 +204,53 @@ export const ClubDetail: React.FC = () => {
                         {club.golf_lessons && <Typography>✓ Golf Lessons</Typography>}
                     </Box>
                 </Paper>
+
+                {/* Weather Section */}
+                {!weatherLoading && weather.length > 0 && (
+                    <Paper sx={{ p: 3, mb: 3 }}>
+                        <Typography variant="h6" gutterBottom>3-Day Forecast</Typography>
+                        <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                            {weather.map((day, index) => {
+                                const info = getWeatherInfo(Number(day.description)); // description is code string?
+                                // utils/weather.ts says description: response.daily.weathercode[index].toString()
+                                // So we convert back to number for getWeatherInfo(code: number)
+                                return (
+                                    <Box key={index} sx={{
+                                        minWidth: 120,
+                                        p: 2,
+                                        border: '1px solid #eee',
+                                        borderRadius: 1,
+                                        textAlign: 'center'
+                                    }}>
+                                        <Typography variant="subtitle2" gutterBottom>
+                                            {new Date(day.date).toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' })}
+                                        </Typography>
+                                        <Box sx={{ my: 1, color: 'text.secondary' }}>
+                                            {getWeatherIconComponent(info.icon)}
+                                        </Box>
+                                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                                            {info.description}
+                                        </Typography>
+                                        <Typography variant="h6">
+                                            {Math.round(day.maxTemp)}° <Typography component="span" variant="body2" color="text.secondary">/ {Math.round(day.minTemp)}°</Typography>
+                                        </Typography>
+                                        <Typography variant="caption" display="block" color="primary">
+                                            {day.precipitation}% Rain
+                                        </Typography>
+                                    </Box>
+                                );
+                            })}
+                        </Box>
+                    </Paper>
+                )}
+
+
+                {/* Reviews Section */}
+                <Paper sx={{ p: 3, mb: 3 }}>
+                    <ReviewSection clubId={id!} />
+                </Paper>
             </Box>
-        </PageLayout>
+        </PageLayout >
     );
 };
 
