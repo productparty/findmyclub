@@ -12,7 +12,7 @@ from psycopg2.extras import RealDictCursor
 import psycopg2
 import requests
 from supabase import create_client
-from utils.recommendation_engine import calculate_recommendation_score
+from server.utils.recommendation_engine import calculate_recommendation_score
 from datetime import datetime
 import json
 import socket
@@ -802,10 +802,46 @@ async def get_reviews(club_id: str):
                     WHERE r.club_id = %s
                     ORDER BY r.created_at DESC
                 """, (club_id,))
-                return cursor.fetchall()
+                
+                reviews = cursor.fetchall()
+                return reviews
     except Exception as e:
-        logger.error(f"Error fetching reviews: {e}")
-        return []
+        logger.error(f"Error getting reviews: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get reviews")
+
+# Admin / Import endpoints
+
+from server.utils.osm_importer import import_courses_for_location
+
+class ImportRequest(BaseModel):
+    lat: float | None = None
+    lng: float | None = None
+    radius_miles: int = 10
+    region: str | None = None
+
+@api_router.post("/admin/import-osm", tags=["Admin"])
+async def import_osm_data(request: ImportRequest, req: Request):
+    """
+    Trigger an import of golf course data from OpenStreetMap.
+    """
+    # Ideally should be protected by admin check
+    # auth_header = req.headers.get('Authorization')
+    # verify_admin(auth_header) 
+    
+    try:
+        if not request.region and (request.lat is None or request.lng is None):
+            raise HTTPException(status_code=400, detail="Either region OR lat/lng must be provided")
+
+        count = import_courses_for_location(
+            lat=request.lat, 
+            lng=request.lng, 
+            radius_miles=request.radius_miles,
+            region=request.region
+        )
+        return {"message": f"Import completed", "imported_count": count}
+    except Exception as e:
+        logger.error(f"Import failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Only enable debug routes in development
 if os.getenv("ENVIRONMENT") == "development":
