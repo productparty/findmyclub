@@ -92,10 +92,6 @@ if not supabase_url or not supabase_key:
     logger.error("Missing Supabase environment variables")
     raise ValueError("Missing required environment variables")
 
-logger.info(f"Supabase URL: {supabase_url}")
-logger.info(f"Supabase Key Length: {len(supabase_key)}")
-logger.info(f"Supabase Key Start: {supabase_key[:5]}...")
-
 try:
     supabase = create_client(supabase_url, supabase_key)
     logger.info("Supabase client initialized successfully")
