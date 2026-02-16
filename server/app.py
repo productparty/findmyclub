@@ -12,7 +12,7 @@ from psycopg2.extras import RealDictCursor
 import psycopg2
 import requests
 from supabase import create_client
-from .utils.recommendation_engine import calculate_recommendation_score
+from server.utils.recommendation_engine import calculate_recommendation_score
 from datetime import datetime
 import json
 import socket
@@ -23,8 +23,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from .limiter import limiter
-from .context import set_user_id, get_user_id
+from server.limiter import limiter
+from server.context import set_user_id, get_user_id
 import re
 import time
 
