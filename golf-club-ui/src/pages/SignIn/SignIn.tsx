@@ -5,7 +5,7 @@ import { TextField, Button, Box, Typography, Alert, Link } from '@mui/material';
 import { config } from '../../config';
 import PageLayout from '../../components/PageLayout';
 
-const Login: React.FC = () => {
+const SignIn: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -35,7 +35,7 @@ const Login: React.FC = () => {
   };
 
   return (
-    <PageLayout title="Login">
+    <PageLayout title="Sign In">
       <Box sx={{ maxWidth: 400, mx: 'auto', mt: 4, p: 2 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -92,4 +92,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login;
+export default SignIn;
