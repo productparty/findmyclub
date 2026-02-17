@@ -22,6 +22,7 @@ const Dashboard = lazy(() => import('./pages/Home/Dashboard'));
 const FindClubUpdated = lazy(() => import('./pages/FindClub/FindClubUpdated'));
 const Favorites = lazy(() => import('./pages/Favorites/Favorites'));
 const GolferProfileUpdated = lazy(() => import('./pages/GolferProfile/GolferProfileUpdated'));
+// Lazy load Login page
 const Login = lazy(() => import('./pages/Login/Login'));
 const SignUp = lazy(() => import('./pages/CreateAccount/CreateAccount'));
 const CreateAccountSubmitted = lazy(() => import('./pages/CreateAccount/CreateAccountSubmitted'));
