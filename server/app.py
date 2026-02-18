@@ -206,25 +206,25 @@ def get_lat_lng(request: Request, zip_code: str):
 @limiter.limit("20/minute")
 async def find_clubs(
     request: Request,
-    zip_code: str,
-    radius: int = 10,
-    limit: int = 25,
+    zip_code: str = Query(..., description="5-digit ZIP code"),
+    radius: int = Query(10, description="Search radius in miles"),
+    limit: int = Query(25, description="Max results"),
     offset: int = 0,
-    price_tier: str | None = None,
-    difficulty: str | None = None,
-    number_of_holes: str | None = None,
-    club_membership: str | None = None,
-    driving_range: bool | None = None,
-    putting_green: bool | None = None,
-    chipping_green: bool | None = None,
-    practice_bunker: bool | None = None,
-    restaurant: bool | None = None,
-    lodging_on_site: bool | None = None,
-    motor_cart: bool | None = None,
-    pull_cart: bool | None = None,
-    golf_clubs_rental: bool | None = None,
-    club_fitting: bool | None = None,
-    golf_lessons: bool | None = None
+    price_tier: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    number_of_holes: Optional[str] = None,
+    club_membership: Optional[str] = None,
+    driving_range: Optional[bool] = None,
+    putting_green: Optional[bool] = None,
+    chipping_green: Optional[bool] = None,
+    practice_bunker: Optional[bool] = None,
+    restaurant: Optional[bool] = None,
+    lodging_on_site: Optional[bool] = None,
+    motor_cart: Optional[bool] = None,
+    pull_cart: Optional[bool] = None,
+    golf_clubs_rental: Optional[bool] = None,
+    club_fitting: Optional[bool] = None,
+    golf_lessons: Optional[bool] = None
 ):
     try:
         validate_zip_code(zip_code)
