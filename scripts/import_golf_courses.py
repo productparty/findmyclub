@@ -2,7 +2,7 @@ import requests
 import json
 import sys
 
-API_URL = "http://localhost:8000/api/v1/admin/import-osm"
+API_URL = "http://localhost:8000/api/admin/import-osm"
 
 def import_courses():
     print("--- Golf Course Importer ---")

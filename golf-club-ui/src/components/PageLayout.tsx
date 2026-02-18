@@ -25,10 +25,10 @@ const PageLayout = forwardRef<HTMLDivElement, PageLayoutProps>(({ children, titl
       .from('favorites')
       .select(`
         id,
-        club_id,
-        clubs:clubs!inner(club_name)
+        golfclub_id,
+        golfclub:golfclub_id!inner(club_name)
       `)
-      .eq('user_id', session.user.id);
+      .eq('profile_id', session.user.id);
 
     if (error) {
       console.error('Error fetching favorites:', error);
@@ -38,8 +38,8 @@ const PageLayout = forwardRef<HTMLDivElement, PageLayoutProps>(({ children, titl
     // Check if data is valid before mapping
     if (data) {
       setFavorites(data.map((item: any) => ({
-        id: item.club_id,
-        club_name: item.clubs[0].club_name
+        id: item.golfclub_id,
+        club_name: item.golfclub?.club_name || 'Unknown Club'
       })));
     }
   };

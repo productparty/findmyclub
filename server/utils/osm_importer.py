@@ -4,6 +4,7 @@ import logging
 import psycopg2
 from psycopg2.extras import execute_values
 from dotenv import load_dotenv
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +37,9 @@ def fetch_osm_data(lat: float = None, lng: float = None, radius_meters: int = 50
     if region:
         # Query by Area/Region Name
         # We try to match a named area (e.g., "Michigan", "Detroit")
-        # timeout increased for large areas
+        # Trying a more flexible search - first try exact name, if that fails, maybe we need to be smarter.
+        # But for now, let's just use the name directly.
+        
         overpass_query = f"""
         [out:json][timeout:300];
         area["name"="{region}"]->.searchArea;
@@ -175,11 +178,13 @@ def import_courses_for_location(lat: float = None, lng: float = None, radius_mil
             
             insert_query = """
             INSERT INTO golfclub (
+                global_id,
                 club_name, address, city, state, zip_code, 
                 number_of_holes, website, phone,
                 driving_range, geom, 
                 price_tier, difficulty 
             ) VALUES (
+                %(global_id)s,
                 %(club_name)s, %(address)s, %(city)s, %(state)s, %(zip_code)s,
                 %(number_of_holes)s, %(website)s, %(phone)s,
                 %(driving_range)s, ST_SetSRID(ST_MakePoint(%(lng)s, %(lat)s), 4326),
@@ -187,11 +192,12 @@ def import_courses_for_location(lat: float = None, lng: float = None, radius_mil
             )
             RETURNING global_id;
             """
-            # Note: Providing defaults for price_tier and difficulty as they are required in some schemas 
-            # or typically not in OSM.
             
             for course in parsed_courses:
                 try:
+                    # Generate UUID
+                    course['global_id'] = str(uuid.uuid4())
+
                     # Check for duplicates (simple check by name)
                     cursor.execute("SELECT global_id FROM golfclub WHERE club_name = %s", (course['club_name'],))
                     if cursor.fetchone():
